@@ -3193,7 +3193,7 @@ function purgerDemo(d){
 ===================================================================== */
 const SB_URL='https://uryqxqebuhpkdquxlela.supabase.co';
 const SB_CLE='sb_publishable_xxMjr_BR1bIGAufAylK5EA_rZY-VVbo';
-let sb=null, sbCanal=null, syncEnCours=false;
+let sb=null, sbCanal=null, syncEnCours=false, derniereErreurSync=null;
 
 const uuid4=()=> (crypto&&crypto.randomUUID)?crypto.randomUUID()
   :'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
@@ -3251,12 +3251,19 @@ async function sbQuitter(){
 }
 
 /* ---------- conversion local <-> serveur ---------- */
+/* Equipes destinataires d'un enregistrement. Aujourd'hui une seule ;
+   demain, l'equipe socle plus celles dont un territoire contient le point. */
+function equipesDe(o){
+  const l=(o&&o.equipes&&o.equipes.length)?o.equipes.slice():[];
+  if(ST.equipe&&l.indexOf(ST.equipe.id)<0)l.push(ST.equipe.id);
+  return l;
+}
 const sidTerr=id=>{const t=ST.terr.find(x=>x.id===id);return t?(t.sid||null):null};
 const terrParSid=s=>ST.terr.find(x=>x.sid===s)||null;
 const batParSid=s=>ST.battues.find(x=>x.sid===s)||null;
 
 function ficheVers(r){
-  return {id:r.sid, equipe_id:ST.equipe.id,
+  return {id:r.sid, equipe_id:ST.equipe.id, equipes:equipesDe(r),
     territoire_id:sidTerr(r.terr), battue_id:(ST.battues.find(b=>b.id===r.battue)||{}).sid||null,
     nature:r.kind, espece:r.sp, comp:r.comp||{}, effectif:r.eff||totalOf(r),
     lat:r.lat, lng:r.lng, precision_m:r.acc||null, source:r.src||'gps',
@@ -3274,20 +3281,20 @@ function ficheDepuis(l,ex){
   r.t=new Date(l.observe_le).getTime(); r.weight=l.poids_kg==null?null:Number(l.poids_kg);
   r.note=l.note||''; r.lune=l.lune; r.lunep=l.lune_pct; r.lever=l.soleil_lever;
   r.coucher=l.soleil_coucher; r.meteo=l.meteo||null; r.auteur_nom=l.auteur_nom||'';
-  r.del=!!l.supprime_le; r.maj=0;
+  r.del=!!l.supprime_le; r.maj=0; r.equipes=l.equipes||[];
   return r;
 }
 function terrVers(t){
-  return {id:t.sid, equipe_id:ST.equipe.id, nom:t.nom, dep:t.dep||null,
+  return {id:t.sid, equipe_id:ST.equipe.id, equipes:equipesDe(t), nom:t.nom, dep:t.dep||null,
     ring:t.ring||[], supprime_le:t.del?new Date().toISOString():null};
 }
 function terrDepuis(l,ex){
   const t=ex||{id:uid()};
   t.sid=l.id; t.nom=l.nom; t.dep=l.dep||''; t.ring=l.ring||[];
-  t.del=!!l.supprime_le; t.maj=0; return t;
+  t.del=!!l.supprime_le; t.maj=0; t.equipes=l.equipes||[]; return t;
 }
 function batVers(b){
-  return {id:b.sid, equipe_id:ST.equipe.id, territoire_id:sidTerr(b.terr),
+  return {id:b.sid, equipe_id:ST.equipe.id, equipes:equipesDe(b), territoire_id:sidTerr(b.terr),
     nom:b.nom, date:b.date, responsable:b.resp||null, elements:b.elements||[],
     supprime_le:b.del?new Date().toISOString():null};
 }
@@ -3296,7 +3303,7 @@ function batDepuis(l,ex){
   const b=ex||{id:uid()};
   b.sid=l.id; b.terr=t?t.id:null; b.nom=l.nom; b.date=l.date;
   b.resp=l.responsable||''; b.elements=l.elements||[];
-  b.del=!!l.supprime_le; b.maj=0; return b;
+  b.del=!!l.supprime_le; b.maj=0; b.equipes=l.equipes||[]; return b;
 }
 
 /* ---------- synchronisation ---------- */
@@ -3321,7 +3328,7 @@ async function synchroniser(silencieux){
     let recu=0;
     for(const table of ['territoire','battue','fiche']){
       const {data,error}=await sb.from(table).select('*')
-        .eq('equipe_id',ST.equipe.id).gt('modifie_le',depuis).order('modifie_le');
+        .contains('equipes',[ST.equipe.id]).gt('modifie_le',depuis).order('modifie_le');
       if(error)throw error;
       (data||[]).forEach(l=>{ if(fusionner(table,l))recu++ });
     }
@@ -3334,7 +3341,14 @@ async function synchroniser(silencieux){
       ' \u00b7 '+recu+' re\u00e7u'+(recu>1?'es':'e'));
   }catch(e){
     syncEtat('erreur');
-    if(!silencieux)toast('Synchronisation impossible : '+(e.message||'r\u00e9seau'));
+    /* meme en arriere-plan, une panne de synchronisation se signale :
+       une fiche que l'on croit partagee et qui ne part pas est pire
+       qu'un message de trop. */
+    const m=e.message||'r\u00e9seau';
+    if(!silencieux||m!==derniereErreurSync){
+      derniereErreurSync=m;
+      toast('Partage en \u00e9chec : '+m);
+    }
   }finally{ syncEnCours=false }
 }
 
