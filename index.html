@@ -215,6 +215,8 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   display:grid;place-items:center;padding:10px;font-size:13.5px;font-weight:550;text-align:center}
 .chip.on{background:var(--foret);border-color:var(--foret-clair);color:#fff}
 .tagbar{display:flex;gap:7px;overflow-x:auto;padding:0 14px 12px;scrollbar-width:none}
+#ch-rapides{flex-wrap:wrap;overflow:visible;max-height:none}
+#ch-rapides .tg{margin-bottom:6px}
 .tagbar::-webkit-scrollbar{display:none}
 .tg{flex:none;height:36px;padding:0 15px;border-radius:18px;background:var(--anthracite-2);
   font-size:12.5px;font-weight:550;display:grid;place-items:center;border:1px solid var(--trait);
@@ -402,6 +404,25 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
 .leaflet-control-scale-line{background:rgba(15,26,19,.78)!important;border-color:var(--trait2)!important;
   color:var(--brume)!important;font-family:var(--mono)!important;font-size:10px!important;
   border-radius:8px!important;padding:2px 6px!important}
+.mbr{width:34px;height:34px;border-radius:50%;background:var(--foret-clair);color:#0E1713;
+  display:grid;place-items:center;font-size:15px;font-weight:750;border:2.5px solid #F4F3EA;
+  box-shadow:0 3px 12px rgba(0,0,0,.6)}
+.mbr.vieux{background:#8CA294}
+.mbrlab{position:absolute;left:50%;transform:translateX(-50%);top:37px;white-space:nowrap;
+  font-size:11px;font-weight:600;background:rgba(15,24,21,.88);padding:3px 8px;border-radius:9px;
+  color:var(--brume)}
+.mbrlab.vieux{color:var(--brume-2)}
+#chat-pastille{position:absolute;top:-3px;right:-3px;min-width:19px;height:19px;padding:0 5px;
+  border-radius:10px;background:var(--sang);color:#fff;font-size:11px;font-weight:700;
+  display:none;place-items:center;border:2px solid var(--nuit)}
+.msg{max-width:82%;margin-bottom:9px;padding:10px 13px;border-radius:16px;background:var(--anthracite-2);
+  border:1px solid var(--trait)}
+.msg.moi{margin-left:auto;background:var(--foret);border-color:var(--foret-clair)}
+.msg b{display:block;font-size:11px;font-weight:600;color:var(--brume-2);margin-bottom:3px}
+.msg.moi b{color:rgba(244,243,234,.75)}
+.msg span{display:block;font-size:14.5px;line-height:1.4}
+#ch-fil{min-height:120px}
+#ch-saisie{flex:1;min-width:0}
 .mk{border-radius:50%;border:2.5px solid rgba(255,255,255,.95);display:grid;place-items:center;
   font-family:var(--mono);font-size:9.5px;font-weight:700;color:#fff;line-height:1;
   box-shadow:0 3px 12px rgba(0,0,0,.55);animation:apparait .34s var(--ressort) both}
@@ -478,6 +499,9 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
       <div id="tools">
         <button class="tool" id="t-geo"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2"/></svg></button>
         <button class="tool" id="t-layer"><svg viewBox="0 0 24 24"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="M3 13l9 5 9-5"/></svg></button>
+        <button class="tool" id="t-chat" style="position:relative">
+          <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>
+          <span id="chat-pastille"></span></button>
         <button class="tool bat" id="t-battue"><svg viewBox="0 0 24 24"><path d="M4 21V4l7 3 9-3v11l-9 3-7-3Z"/><path d="M11 7v11"/></svg></button>
         <button class="tool" id="t-filter"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></button>
         <button class="tool" id="t-heat">DENS<br>ITÉ</button>
@@ -567,6 +591,28 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div class="note" id="diag-bilan">—</div>
   </div>
   <div class="sfoot"><button class="big primary" id="diag-relancer">Relancer le test</button></div>
+</div>
+
+<div class="sheet" id="sh-chat">
+  <div class="grab"></div>
+  <div class="shead"><div style="flex:1"><h2>Équipe</h2><div class="sub" id="ch-sous">—</div></div>
+    <button class="link" data-close="1">Fermer</button></div>
+  <div style="padding:0 14px 10px">
+    <button class="big primary" id="ch-pointer" style="height:52px;font-size:14px">
+      <svg width="19" height="19" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><circle cx="12" cy="12" r="7"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>
+      Je suis là</button>
+  </div>
+  <div style="padding:0 14px"><div class="lab" style="margin-top:4px">Qui est où</div></div>
+  <div style="padding:0 14px"><div id="ch-membres"></div></div>
+  <div style="padding:0 14px"><div class="lab">Messages</div></div>
+  <div class="sbody" id="ch-fil"></div>
+  <div style="padding:0 14px 8px"><button class="tg" id="ch-son">Son activé</button></div>
+  <div class="tagbar" id="ch-rapides"></div>
+  <div class="sfoot">
+    <input type="text" id="ch-saisie" placeholder="Écrire un message…" autocomplete="off"
+      enterkeyhint="send" maxlength="500" autocapitalize="sentences">
+    <button class="big primary" id="ch-envoyer" style="flex:0 0 74px">Envoyer</button>
+  </div>
 </div>
 
 <div class="sheet short" id="sh-equipe">
@@ -1072,7 +1118,7 @@ let PLACE=null, draft=null, editing=null, editElem=null;
 let FIX=null;                 /* derniere position connue du telephone */
 let suiviId=null, recentre=false;
 let heatOn=false, SILHOUETTES=true;
-let map,layTerr,layRec,layBat,layDraw,layMe,heatLayer;
+let map,layTerr,layRec,layBat,layDraw,layMe,layMembres,heatLayer;
 let bases={},overs={},aBase='ign_ortho',aOver=new Set(['cadastre']);
 
 const KEY='territoire:v4';
@@ -1407,7 +1453,8 @@ function initMap(){
   setTimeout(diagnostic,7000);
   layTerr=L.layerGroup().addTo(map); layBat=L.layerGroup().addTo(map);
   layRec=L.layerGroup().addTo(map); layDraw=L.layerGroup().addTo(map);
-  layMe=L.layerGroup().addTo(map); heatLayer=new HeatLayer();
+  layMe=L.layerGroup().addTo(map); layMembres=L.layerGroup().addTo(map);
+  heatLayer=new HeatLayer();
   map.on('move',function(){if(PLACE)updateReticle()});
   map.on('zoomend',function(){syncZoomTag();if(SILHOUETTES)renderRecs()});
 
@@ -2707,6 +2754,7 @@ $('#e-save').onclick=function(){
   draft.weight=$('#e-weight').value?parseFloat($('#e-weight').value):null;
   draft.battue=ST.aB||null;
   draft.terr=territoireDe(draft.lat,draft.lng);
+  if(!draft.auteur_nom&&ST.equipe)draft.auteur_nom=ST.equipe.pseudo;
   const r=draft;
   marquer(r);ST.recs.unshift(r);ST.recs.sort((a,b)=>b.t-a.t);
   const ajuste=assurerVisible(r);
@@ -2744,6 +2792,10 @@ function openDetail(id){
     (bt?'<div class="lab">Battue</div><div style="font-size:15px">'+esc(bt.nom)+' \u2014 '+fmtDate(new Date(bt.date))+'</div>':'')+
     '<div class="lab">'+(r.kind==='p'?'Animaux pr\u00e9lev\u00e9s':'Composition')+'</div>'+lines+
     (r.weight?'<div class="lab">Poids</div><div class="mono" style="font-size:20px">'+r.weight+' kg</div>':'')+
+    (r.auteur_nom?'<div class="lab">Observ\u00e9 par</div>'+
+      '<div style="font-size:15px">'+esc(r.auteur_nom)+
+      (ST.equipe&&r.auteur_nom===ST.equipe.pseudo?' <span style="color:var(--brume-2)">(vous)</span>':'')+
+      '</div>':'')+
     '<div class="lab">Quand</div>'+
     '<button class="posline" id="d-quand" style="background:var(--anthracite-2);border-color:var(--trait)">'+
       '<span class="pl"><b>'+cap(fmtDay(d))+' \u00e0 '+fmtHM(d)+'</b>'+
@@ -2874,7 +2926,9 @@ function renderLog(){
     return '<div class="daygroup"><div class="dayhead">'+fmtDay(new Date(k))+'</div>'+
       g[k].map(function(r){
         const bt=ST.battues.find(x=>x.id===r.battue);
-        const extra=(r.weight?' \u00b7 '+r.weight+' kg':'')+
+        const qui=(r.auteur_nom&&ST.equipe&&r.auteur_nom!==ST.equipe.pseudo)
+          ? ' \u00b7 '+esc(r.auteur_nom) : '';
+        const extra=qui+(r.weight?' \u00b7 '+r.weight+' kg':'')+
           (r.meteo?' \u00b7 '+libMeteo(r.meteo).nom.toLowerCase()+' '+Math.round(r.meteo.temp)+'\u00b0':'')+
           (bt?' \u00b7 '+bt.nom:'')+(r.note?' \u2014 '+esc(r.note):'');
         return '<button class="rec" data-id="'+r.id+'"><span class="badge '+r.kind+'">'+r.sp+'</span>'+
@@ -3087,9 +3141,38 @@ $$('.tab').forEach(function(t){t.onclick=function(){
   $('#v-log').classList.toggle('on',v==='log');
   $('#v-stat').classList.toggle('on',v==='stat');
   $('#actionbar').style.display=v==='map'?'flex':'none';
-  if(v==='map'){setTimeout(()=>map.invalidateSize(),60); if(!PLACE)syncActionBar();}
+  if(v==='map'){setTimeout(()=>map.invalidateSize(),60); if(!PLACE)syncActionBar();
+    if(sbPret())renderMembres();}
   else{ if(PLACE)stopPlace(); $('#typebar').classList.remove('on'); }
 }});
+$('#t-chat').onclick=ouvrirChat;
+$('#ch-pointer').onclick=pointer;
+$('#ch-envoyer').onclick=function(){envoyerMessage($('#ch-saisie').value.trim())};
+$('#ch-saisie').onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();
+  envoyerMessage($('#ch-saisie').value.trim())}};
+/* Le clavier d'iOS recouvre le bas de la feuille : on ramene la saisie
+   dans le champ visible des que le clavier s'ouvre. */
+$('#ch-saisie').onfocus=function(){
+  setTimeout(function(){
+    try{$('#ch-saisie').scrollIntoView({block:'center',behavior:'smooth'})}catch(e){}
+    if(window.majCarte)window.majCarte();
+  },320);
+};
+$('#ch-saisie').oninput=function(){
+  $('#ch-envoyer').disabled=!$('#ch-saisie').value.trim();
+};
+$('#ch-rapides').onclick=function(e){const b=e.target.closest('[data-ph]');if(!b)return;
+  envoyerMessage(b.dataset.ph)};
+$('#ch-son').onclick=function(){
+  ST.son=(ST.son===false); save(); syncSon();
+  if(ST.son!==false)sonner('traque');
+};
+function syncSon(){
+  const b=$('#ch-son'); if(!b)return;
+  const on=ST.son!==false;
+  b.classList.toggle('on',on);
+  b.textContent=on?'Son activ\u00e9':'Son coup\u00e9';
+}
 $('#t-filter').onclick=()=>openSheet('#sh-filter');
 const COURT={ign_ortho:'SAT',esri:'SAT',ign_plan:'PLAN',ign_scan:'1:25',osm:'OSM',topo:'TOPO'};
 function syncLayerBtn(){
@@ -3376,6 +3459,23 @@ async function abonner(){
   if(!sbPret())return;
   try{ if(sbCanal){sb.removeChannel(sbCanal);sbCanal=null} }catch(e){}
   sbCanal=sb.channel('equipe:'+ST.equipe.id);
+  sbCanal.on('postgres_changes',
+    {event:'*',schema:'public',table:'presence',filter:'equipe_id=eq.'+ST.equipe.id},
+    function(){chargerMembres()});
+  sbCanal.on('postgres_changes',
+    {event:'INSERT',schema:'public',table:'message',filter:'equipe_id=eq.'+ST.equipe.id},
+    function(p){
+      if(!p.new)return;
+      MESSAGES.push(p.new); if(MESSAGES.length>80)MESSAGES.shift();
+      const f=document.getElementById('sh-chat');
+      if(f&&f.classList.contains('on'))renderMessages();
+      if(p.new.auteur_nom!==((ST.equipe||{}).pseudo)){
+        sonner(estTraque(p.new.texte)?'traque':'message');
+        if(!(f&&f.classList.contains('on'))){
+          msgNonLus++; syncPastille(); toast(p.new.auteur_nom+' : '+p.new.texte.slice(0,40));
+        }
+      }
+    });
   ['fiche','territoire','battue'].forEach(function(table){
     sbCanal.on('postgres_changes',
       {event:'*',schema:'public',table:table,filter:'equipe_id=eq.'+ST.equipe.id},
@@ -3472,6 +3572,220 @@ $('#eq-ok').onclick=async function(){
 addEventListener('online',function(){setTimeout(function(){synchroniser(true)},1500)});
 setInterval(function(){synchroniser(true)},120000);
 
+
+/* =====================================================================
+   PRESENCE ET MESSAGERIE
+   Pointage volontaire plutot que suivi continu : une web app iOS ne
+   peut pas emettre sa position ecran eteint. Chacun signale ou il est,
+   avec le repere le plus parlant : poste, territoire, ou coordonnees.
+===================================================================== */
+let MEMBRES=[], MESSAGES=[], msgNonLus=0, dernierPointage=0;
+
+function ageLisible(ms){
+  const s=Math.round((Date.now()-ms)/1000);
+  if(s<60)return 'à l\u2019instant';
+  const m=Math.round(s/60);
+  if(m<60)return 'il y a '+m+' min';
+  const h=Math.round(m/60);
+  if(h<24)return 'il y a '+h+' h';
+  return 'il y a '+Math.round(h/24)+' j';
+}
+
+/* Le repere le plus utile a annoncer, dans l'ordre de precision. */
+function repereDe(lat,lng){
+  const b=battue();
+  if(b){
+    let meilleur=null,d0=1e12;
+    b.elements.filter(e=>e.type==='poste').forEach(function(e){
+      const d=L.latLng(e.pts[0]).distanceTo(L.latLng([lat,lng]));
+      if(d<d0){d0=d;meilleur=e}
+    });
+    if(meilleur&&d0<250)
+      return 'poste '+(meilleur.num||'')+(d0>40?' \u00b7 \u00e0 '+Math.round(d0)+' m':'');
+  }
+  const t=ST.terr.find(t=>t.ring&&t.ring.length>2&&dansPolygone(lat,lng,t.ring));
+  if(t)return t.nom;
+  return 'hors territoire';
+}
+
+async function pointer(){
+  if(!sbPret()){toast('Rejoignez une \u00e9quipe d\u2019abord');return}
+  toast('Localisation\u2026');
+  const p=await positionMaintenant();
+  const rep=repereDe(p.lat,p.lng);
+  const b=battue();
+  try{
+    const {error}=await sb.from('presence').upsert({
+      equipe_id:ST.equipe.id, nom:ST.equipe.pseudo,
+      lat:p.lat, lng:p.lng, precision_m:p.acc||null,
+      battue_id:b?(b.sid||null):null, repere:rep, maj_le:new Date().toISOString()
+    },{onConflict:'equipe_id,user_id'});
+    if(error)throw error;
+    dernierPointage=Date.now();
+    toast('Position partag\u00e9e \u00b7 '+rep);
+    chargerMembres();
+  }catch(e){ toast('Partage impossible : '+(e.message||'r\u00e9seau')) }
+}
+
+async function chargerMembres(){
+  if(!sbPret())return;
+  try{
+    const {data,error}=await sb.from('presence').select('*').eq('equipe_id',ST.equipe.id);
+    if(error)throw error;
+    MEMBRES=(data||[]).map(function(l){
+      return {user:l.user_id,nom:l.nom,lat:l.lat,lng:l.lng,acc:l.precision_m,
+              repere:l.repere,t:new Date(l.maj_le).getTime()};
+    }).sort((a,b)=>b.t-a.t);
+    renderMembres(); renderListeMembres();
+  }catch(e){}
+}
+
+function renderMembres(){
+  if(!layMembres)return;
+  layMembres.clearLayers();
+  const seuil=Date.now()-4*3600e3;      // au-dela de 4 h, on n'affiche plus
+  MEMBRES.filter(m=>m.t>seuil).forEach(function(m){
+    const vieux=(Date.now()-m.t)>15*60e3;
+    const html='<div class="mbr'+(vieux?' vieux':'')+'">'+esc((m.nom||'?').slice(0,1).toUpperCase())+
+      '</div><div class="mbrlab'+(vieux?' vieux':'')+'">'+esc(m.nom)+' \u00b7 '+ageLisible(m.t)+'</div>';
+    L.marker([m.lat,m.lng],{icon:L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],html:html}),
+      zIndexOffset:600}).addTo(layMembres)
+      .on('click',function(){toast(m.nom+' \u00b7 '+(m.repere||'')+' \u00b7 '+ageLisible(m.t))});
+  });
+}
+
+function renderListeMembres(){
+  const el=$('#ch-membres'); if(!el)return;
+  const seuil=Date.now()-4*3600e3;
+  const vus=MEMBRES.filter(m=>m.t>seuil);
+  el.innerHTML=vus.length? vus.map(function(m){
+    return '<button class="card" data-mbr="'+m.lat+','+m.lng+'">'+
+      '<span class="ci">'+esc((m.nom||'?').slice(0,1).toUpperCase())+'</span>'+
+      '<span class="cm"><span class="c1">'+esc(m.nom)+'</span>'+
+      '<span class="c2">'+esc(m.repere||'')+' \u00b7 '+ageLisible(m.t).toUpperCase()+'</span></span>'+
+      '<span class="cg">Voir</span></button>';
+  }).join('') : '<div class="empty" style="padding:18px">Personne n\u2019a encore point\u00e9.</div>';
+  el.onclick=function(e){
+    const b=e.target.closest('[data-mbr]'); if(!b)return;
+    const [la,ln]=b.dataset.mbr.split(',').map(Number);
+    closeAll(); map.setView([la,ln],16);
+  };
+}
+
+/* ---------------------------------------------------------------
+   SIGNAUX SONORES
+   Tout est synthetise : aucun fichier a heberger, aucun telechargement.
+   Une trompe pour le debut et la fin de traque, un bip discret pour
+   les autres messages.
+--------------------------------------------------------------- */
+let audio=null;
+function sonPret(){
+  if(audio)return audio;
+  const C=window.AudioContext||window.webkitAudioContext;
+  if(!C)return null;
+  try{ audio=new C() }catch(e){ return null }
+  return audio;
+}
+/* iOS n'autorise le son qu'apres un geste : on debloque au premier appui. */
+addEventListener('touchstart',function debloquer(){
+  const a=sonPret(); if(a&&a.state==='suspended')a.resume();
+  removeEventListener('touchstart',debloquer);
+},{once:true,passive:true});
+addEventListener('click',function debloquer2(){
+  const a=sonPret(); if(a&&a.state==='suspended')a.resume();
+  removeEventListener('click',debloquer2);
+},{once:true});
+
+function note(a,freq,depart,duree,volume){
+  const o=a.createOscillator(), g=a.createGain(), h=a.createGain();
+  o.type='triangle'; o.frequency.value=freq;
+  /* une seconde harmonique donne le timbre cuivre de la trompe */
+  const o2=a.createOscillator(), g2=a.createGain();
+  o2.type='sine'; o2.frequency.value=freq*2; g2.gain.value=.28;
+  const t=a.currentTime+depart;
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(volume,t+.04);
+  g.gain.setValueAtTime(volume,t+duree*.7);
+  g.gain.exponentialRampToValueAtTime(.0008,t+duree);
+  o.connect(g); o2.connect(g2); g2.connect(g); g.connect(h); h.connect(a.destination);
+  h.gain.value=1;
+  o.start(t); o2.start(t); o.stop(t+duree+.02); o2.stop(t+duree+.02);
+}
+function sonner(type){
+  if(ST.son===false)return;
+  const a=sonPret(); if(!a)return;
+  if(a.state==='suspended'){a.resume().catch(function(){})}
+  if(type==='traque'){
+    /* trois notes montantes, a la maniere d'une sonnerie de chasse */
+    note(a,392,0,.26,.22);    // sol
+    note(a,523,.24,.26,.22);  // do
+    note(a,659,.48,.46,.24);  // mi
+  }else{
+    note(a,880,0,.10,.13);
+    note(a,1175,.12,.14,.11);
+  }
+}
+const estTraque=t=>/traque/i.test(t||'');
+
+/* ---------- messagerie ---------- */
+/* Ordre d'usage reel : on annonce d'abord qu'on est en place,
+   puis ce qui bouge, puis la fin. */
+const PHRASES=['Au poste','Debut de traque','Sanglier ici','Chevreuil ici','Cerf ici',
+  'Canard ici','Renard ici','Animal sorti au nord','Animal sorti au sud',
+  'Chien devant, ne tirez pas','Rien vu','Fin de traque'];
+
+async function chargerMessages(){
+  if(!sbPret())return;
+  try{
+    const {data,error}=await sb.from('message').select('*')
+      .eq('equipe_id',ST.equipe.id).order('envoye_le',{ascending:false}).limit(60);
+    if(error)throw error;
+    MESSAGES=(data||[]).reverse();
+    renderMessages();
+  }catch(e){}
+}
+function renderMessages(){
+  const el=$('#ch-fil'); if(!el)return;
+  el.innerHTML=MESSAGES.length? MESSAGES.map(function(m){
+    const moi=m.auteur_nom===((ST.equipe||{}).pseudo);
+    const d=new Date(m.envoye_le);
+    return '<div class="msg'+(moi?' moi':'')+'"><b>'+esc(m.auteur_nom)+' \u00b7 '+fmtHM(d)+'</b>'+
+      '<span>'+esc(m.texte)+'</span></div>';
+  }).join('') : '<div class="empty" style="padding:22px">Aucun message.</div>';
+  el.scrollTop=el.scrollHeight;
+}
+async function envoyerMessage(txt){
+  if(!sbPret()||!txt)return;
+  const b=battue();
+  const f=fixFrais();
+  try{
+    const {error}=await sb.from('message').insert({
+      equipe_id:ST.equipe.id, battue_id:b?(b.sid||null):null,
+      auteur_nom:ST.equipe.pseudo, texte:txt.slice(0,500),
+      lat:f?f.lat:null, lng:f?f.lng:null});
+    if(error)throw error;
+    $('#ch-saisie').value='';
+    $('#ch-envoyer').disabled=true;
+    chargerMessages();
+  }catch(e){ toast('Message non envoy\u00e9 : '+(e.message||'r\u00e9seau')) }
+}
+
+function ouvrirChat(){
+  if(!sbPret()){toast('Rejoignez une \u00e9quipe d\u2019abord');return}
+  $('#ch-sous').textContent=ST.equipe.nom+' \u00b7 '+ST.equipe.pseudo;
+  msgNonLus=0; syncPastille();
+  $('#ch-rapides').innerHTML=PHRASES.map(p=>'<button class="tg" data-ph="'+esc(p)+'">'+esc(p)+'</button>').join('');
+  $('#ch-saisie').value=''; $('#ch-envoyer').disabled=true; syncSon();
+  openSheet('#sh-chat');
+  chargerMembres(); chargerMessages();
+}
+function syncPastille(){
+  const b=$('#t-chat'); if(!b)return;
+  b.classList.toggle('act',msgNonLus>0);
+  const p=$('#chat-pastille');
+  if(p){p.textContent=msgNonLus>9?'9+':String(msgNonLus); p.style.display=msgNonLus?'grid':'none'}
+}
+
 /* ---------- demarrage ---------- */
 (async function boot(){
   const st=await load();
@@ -3484,6 +3798,7 @@ setInterval(function(){synchroniser(true)},120000);
   const data=st?{terr:st.terr||[],battues:st.battues||[],recs:st.recs||[],aT:st.aT}
                :{terr:[],battues:[],recs:[],aT:'ALL'};
   ST.equipe=(st&&st.equipe)||null; ST.sync=(st&&st.sync)||null;
+  ST.son=(st&&typeof st.son==='boolean')?st.son:true;
   const efface=purgerDemo(data);
   ST.terr=data.terr;ST.battues=data.battues;ST.recs=data.recs;
   ST.aT=data.aT||'ALL';ST.aB=null;
@@ -3497,7 +3812,8 @@ setInterval(function(){synchroniser(true)},120000);
   suivre();
   setTimeout(rattraperMeteo,2500);
   syncEtat(); syncBoutons();
-  if(ST.equipe){ sbInit().then(function(c){ if(c){synchroniser(true);abonner()} }); }
+  if(ST.equipe){ sbInit().then(function(c){ if(c){synchroniser(true);abonner();
+    chargerMembres();chargerMessages()} }); }
 })();
 
 /* ---------------------------------------------------------------
