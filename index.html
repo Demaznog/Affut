@@ -530,6 +530,9 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <button class="link" data-close="1">Fermer</button></div>
   <div class="sbody"><div id="tr-list"></div>
     <div class="note">Un territoire se trace en marchant ses limites, ou en suivant le parcellaire cadastral depuis le fond de carte.</div>
+    <div class="lab">Équipe</div>
+    <div id="eq-etat" class="note" style="margin-top:0;border-left-color:var(--foret-clair)">—</div>
+    <div class="chipgrid" style="margin-top:10px" id="eq-boutons"></div>
     <div class="lab">Sauvegarde</div>
     <div id="sv-etat" class="note" style="margin-top:0;border-left-color:var(--foret-clair)">—</div>
     <div class="chipgrid" style="margin-top:10px">
@@ -564,6 +567,47 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div class="note" id="diag-bilan">—</div>
   </div>
   <div class="sfoot"><button class="big primary" id="diag-relancer">Relancer le test</button></div>
+</div>
+
+<div class="sheet short" id="sh-equipe">
+  <div class="grab"></div>
+  <div class="shead"><div style="flex:1"><h2 id="eq-titre">Équipe</h2>
+    <div class="sub" id="eq-sous">—</div></div></div>
+  <div class="sbody">
+    <div class="chipgrid" id="eq-mode">
+      <button class="chip on" id="eq-m-creer">Créer une équipe</button>
+      <button class="chip" id="eq-m-rejoindre">Rejoindre</button>
+    </div>
+    <div id="eq-bloc-creer">
+      <div class="lab">Nom de l'équipe</div>
+      <input type="text" id="eq-nom" placeholder="Les Ajoncs" autocomplete="off">
+    </div>
+    <div id="eq-bloc-code" style="display:none">
+      <div class="lab">Code reçu</div>
+      <input type="text" id="eq-code" placeholder="ABCD2345" autocomplete="off"
+        autocapitalize="characters" maxlength="8">
+    </div>
+    <div class="lab">Votre prénom</div>
+    <input type="text" id="eq-pseudo" placeholder="Gonzague" autocomplete="off">
+    <div class="note" id="eq-aide">Les observations, territoires et battues seront partagés
+      avec tous les membres. Chacun garde la main sur ses propres fiches.</div>
+  </div>
+  <div class="sfoot"><button class="big ghost" data-close="1">Annuler</button>
+    <button class="big primary" id="eq-ok">Continuer</button></div>
+</div>
+
+<div class="sheet short" id="sh-code">
+  <div class="grab"></div>
+  <div class="shead"><div style="flex:1"><h2>Code de l'équipe</h2>
+    <div class="sub" id="cd-sous">—</div></div></div>
+  <div class="sbody">
+    <div id="cd-code" class="mono" style="font-size:38px;font-weight:700;letter-spacing:.14em;
+      text-align:center;padding:26px 0;background:var(--anthracite-3);border-radius:20px;
+      border:1px solid var(--trait)">—</div>
+    <div class="note">Transmettez ce code à vos coéquipiers. Ils le saisissent une fois,
+      avec leur prénom, et tout se partage ensuite.</div>
+  </div>
+  <div class="sfoot"><button class="big primary" data-close="1">Fermer</button></div>
 </div>
 
 <div class="sheet short" id="sh-dup">
@@ -1542,7 +1586,7 @@ function renderBat(){
         const p=ev.target.getLatLng(), av=L.latLng(el.pts[0]);
         const d=Math.round(av.distanceTo(p));
         el.pts=[[p.lat,p.lng]];
-        save();syncBattueBar();
+        marquer(el.b||b);save();syncBattueBar();
         toast(T.n+(el.num?' '+el.num:'')+' d\u00e9plac\u00e9 de '+(d<1000?d+' m':(d/1000).toFixed(2)+' km'));
         setTimeout(function(){bouge=false},220);
       });
@@ -1747,7 +1791,7 @@ $('#act-main').onclick=async function(){
       const r=ST.recs.find(x=>x.id===PLACE.rec);
       if(r){
         const d=Math.round(L.latLng([r.lat,r.lng]).distanceTo(c));
-        r.lat=c.lat;r.lng=c.lng;r.acc=null;r.src='carte';
+        marquer(r);r.lat=c.lat;r.lng=c.lng;r.acc=null;r.src='carte';
         r.terr=territoireDe(c.lat,c.lng);
         const dt=new Date(r.t),l=lune(dt),so=soleil(dt,c.lat,c.lng);
         r.lever=so.lever;r.coucher=so.coucher;r.lune=l.nom;r.lunep=l.eclaire;
@@ -1881,7 +1925,9 @@ $('#sv-file').onchange=function(e){
     'Remplacer',function(){importer(f,false)},
     'Fusionner',function(){importer(f,true)});
 };
-function ouvrirTerritoires(){renderTerrList();syncSauvegarde();openSheet('#sh-terr')}
+function ouvrirTerritoires(){renderTerrList();syncSauvegarde();
+  if(typeof syncEtat==='function'){syncEtat();syncBoutons()}
+  openSheet('#sh-terr')}
 $('#terr-btn').onclick=ouvrirTerritoires;
 $$('[data-portee]').forEach(b=>b.onclick=ouvrirTerritoires);
 $$('[data-filtre]').forEach(b=>b.onclick=function(){openSheet('#sh-filter')});
@@ -1893,6 +1939,8 @@ $('#tr-list').onclick=function(e){
       'Les limites de \u00ab '+t.nom+' \u00bb et ses '+battuesOf(id).length+
       ' battues seront supprim\u00e9es. Ses '+recsOf(id).length+
       ' fiches sont conserv\u00e9es et repassent hors territoire.','Supprimer les limites',function(){
+        const vt=ST.terr.find(x=>x.id===id);
+        if(vt&&ST.equipe){marquer(vt);vt.del=true;synchroniser(true)}
         ST.terr=ST.terr.filter(x=>x.id!==id);
         ST.recs.forEach(r=>{if(r.terr===id)r.terr=null});
         ST.battues=ST.battues.filter(b=>b.terr!==id);
@@ -1977,7 +2025,7 @@ let pendingTerr=null;
 function finishTerr(pts){
   if(!pendingTerr){toast('Cr\u00e9ation interrompue');return}
   const t={id:uid(),nom:pendingTerr.nom,dep:pendingTerr.dep||'',ring:pts,cree:Date.now()};
-  ST.terr.push(t);pendingTerr=null;
+  marquer(t);ST.terr.push(t);pendingTerr=null;
   let repris=0;
   ST.recs.forEach(function(r){if(!r.terr&&dansPolygone(r.lat,r.lng,pts)){r.terr=t.id;repris++}});
   ST.aT=t.id;ST.aB=null;
@@ -2024,7 +2072,7 @@ $('#bn-ok').onclick=function(){
   const nom=$('#bn-nom').value.trim()||'Battue du '+fmtDate(new Date($('#bn-date').value||Date.now()));
   const b={id:uid(),terr:ST.aT,nom:nom,date:$('#bn-date').value||new Date().toISOString().slice(0,10),
     resp:$('#bn-resp').value.trim(),elements:[]};
-  ST.battues.push(b);save();closeAll();openBattue(b.id);
+  marquer(b);ST.battues.push(b);save();closeAll();openBattue(b.id);
 };
 function openBattue(id){
   ST.aB=id;const b=battue();if(!b)return;
@@ -2138,7 +2186,7 @@ $('#dup-ok').onclick=function(){
       if(e.num!=null)c.num=e.num;
       return c;
     })};
-  ST.battues.push(copie);save();closeAll();openBattue(copie.id);
+  marquer(copie);ST.battues.push(copie);save();closeAll();openBattue(copie.id);
   setTimeout(function(){toast(copie.elements.length+' \u00e9l\u00e9ments repris \u00b7 '+
     fmtDate(new Date(date)))},1200);
 };
@@ -2152,7 +2200,7 @@ function addElement(type,pts){
     const pris=b.elements.filter(e=>e.type===type).map(e=>+e.num||0);
     el.num=(pris.length?Math.max.apply(null,pris):0)+1;
   }
-  b.elements.push(el);save();syncBattueBar();renderBat();
+  b.elements.push(el);marquer(b);save();syncBattueBar();renderBat();
   if(type==='poste')openElem(el.id);
   else toast(ETYPES[type].n+' ajout\u00e9');
 }
@@ -2183,13 +2231,13 @@ $('#el-ok').onclick=function(){
   const b=battue();if(!b)return;
   const el=b.elements.find(e=>e.id===editElem);if(!el)return;
   el.nom=$('#el-nom').value.trim();el.chasseur=$('#el-chasseur').value.trim();el.note=$('#el-note').value.trim();
-  save();renderBat();syncBattueBar();closeAll();
+  marquer(b);save();renderBat();syncBattueBar();closeAll();
   toast(el.chasseur?el.chasseur+' au poste '+(el.num||''):'Enregistr\u00e9');
 };
 $('#el-del').onclick=function(){
   const b=battue();if(!b)return;
   b.elements=b.elements.filter(e=>e.id!==editElem);
-  save();renderBat();syncBattueBar();closeAll();toast('\u00c9l\u00e9ment supprim\u00e9');
+  marquer(b);save();renderBat();syncBattueBar();closeAll();toast('\u00c9l\u00e9ment supprim\u00e9');
 };
 
 /* ---------- diagnostic des services externes ---------- */
@@ -2660,9 +2708,10 @@ $('#e-save').onclick=function(){
   draft.battue=ST.aB||null;
   draft.terr=territoireDe(draft.lat,draft.lng);
   const r=draft;
-  ST.recs.unshift(r);ST.recs.sort((a,b)=>b.t-a.t);
+  marquer(r);ST.recs.unshift(r);ST.recs.sort((a,b)=>b.t-a.t);
   const ajuste=assurerVisible(r);
   save();closeAll();stopPlace();syncTopbar();syncActionBar();renderAll();
+  if(ST.equipe)setTimeout(function(){synchroniser(true)},400);
   /* si la meteo n'a pas eu le temps d'arriver pendant la saisie, on la
      complete en arriere-plan : elle ne doit jamais retarder l'enregistrement */
   if(!r.meteo)releverMeteo(r,true).then(function(m){if(m)renderAll()});
@@ -2730,7 +2779,9 @@ function openDetail(id){
     setTimeout(function(){startPoint('deplacer',{rec:r.id,orig:[r.lat,r.lng]})},280);
   };
 }
-$('#d-del').onclick=function(){ST.recs=ST.recs.filter(r=>r.id!==editing);save();closeAll();
+$('#d-del').onclick=function(){const v=ST.recs.find(r=>r.id===editing);
+  if(v&&ST.equipe){marquer(v);v.del=true;synchroniser(true)}
+  ST.recs=ST.recs.filter(r=>r.id!==editing);save();closeAll();
   syncTopbar();renderAll();toast('Fiche supprim\u00e9e')};
 
 /* --- correction de la date et de l'heure d'une fiche enregistree --- */
@@ -2748,7 +2799,7 @@ $('#q-ok').onclick=async function(){
   const n=new Date($('#q-date').value+'T'+($('#q-heure').value||'00:00')+':00');
   if(isNaN(n)){toast('Date invalide');return}
   if(n.getTime()>Date.now()+864e5){toast('Cette date est dans le futur');return}
-  r.t=n.getTime();
+  marquer(r);r.t=n.getTime();
   const l=lune(n),so=soleil(n,r.lat,r.lng);
   r.lune=l.nom;r.lunep=l.eclaire;r.lever=so.lever;r.coucher=so.coucher;
   r.meteo=null;delete r.meteoKo;
@@ -3132,6 +3183,281 @@ function purgerDemo(d){
 }
 
 
+
+/* =====================================================================
+   PARTAGE EN EQUIPE — Supabase
+   Chaque appareil recoit une identite anonyme, rattachee a une equipe
+   par un code. Territoires, fiches et battues circulent entre tous les
+   membres. La derniere ecriture l'emporte, l'heure venant du serveur.
+   Hors reseau, l'application fonctionne seule et rattrape ensuite.
+===================================================================== */
+const SB_URL='https://uryqxqebuhpkdquxlela.supabase.co';
+const SB_CLE='sb_publishable_xxMjr_BR1bIGAufAylK5EA_rZY-VVbo';
+let sb=null, sbCanal=null, syncEnCours=false;
+
+const uuid4=()=> (crypto&&crypto.randomUUID)?crypto.randomUUID()
+  :'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
+     const r=Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16)});
+
+/* Toute modification locale est datee : c'est elle qu'on enverra. */
+function marquer(o){ if(o){o.maj=Date.now(); if(!o.sid)o.sid=uuid4();} return o }
+
+function sbPret(){ return !!(sb && ST.equipe && ST.equipe.id) }
+
+async function sbCharger(){
+  if(window.supabase&&window.supabase.createClient)return true;
+  return new Promise(function(res){
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js';
+    s.onload=()=>res(!!(window.supabase&&window.supabase.createClient));
+    s.onerror=()=>res(false);
+    document.head.appendChild(s);
+  });
+}
+async function sbInit(){
+  if(sb)return sb;
+  if(!await sbCharger())return null;
+  sb=window.supabase.createClient(SB_URL,SB_CLE,{auth:{persistSession:true,autoRefreshToken:true}});
+  const {data}=await sb.auth.getSession();
+  if(!data.session){
+    const r=await sb.auth.signInAnonymously();
+    if(r.error){sb=null;return null}
+  }
+  return sb;
+}
+
+/* ---------- adhesion ---------- */
+async function sbCreerEquipe(nom,pseudo){
+  if(!await sbInit())throw new Error('service injoignable');
+  const {data,error}=await sb.rpc('creer_equipe',{p_nom:nom,p_pseudo:pseudo});
+  if(error)throw error;
+  const l=Array.isArray(data)?data[0]:data;
+  ST.equipe={id:l.equipe_id,nom:nom,code:l.code,pseudo:pseudo};
+  ST.sync={depuis:null};
+  await save(); return ST.equipe;
+}
+async function sbRejoindre(code,pseudo){
+  if(!await sbInit())throw new Error('service injoignable');
+  const {data,error}=await sb.rpc('rejoindre_equipe',{p_code:code,p_pseudo:pseudo});
+  if(error)throw error;
+  const l=Array.isArray(data)?data[0]:data;
+  ST.equipe={id:l.equipe_id,nom:l.equipe_nom,code:code.toUpperCase().trim(),pseudo:pseudo};
+  ST.sync={depuis:null};
+  await save(); return ST.equipe;
+}
+async function sbQuitter(){
+  try{ if(sbCanal){sb.removeChannel(sbCanal);sbCanal=null} }catch(e){}
+  ST.equipe=null; ST.sync=null; await save(); syncEtat();
+}
+
+/* ---------- conversion local <-> serveur ---------- */
+const sidTerr=id=>{const t=ST.terr.find(x=>x.id===id);return t?(t.sid||null):null};
+const terrParSid=s=>ST.terr.find(x=>x.sid===s)||null;
+const batParSid=s=>ST.battues.find(x=>x.sid===s)||null;
+
+function ficheVers(r){
+  return {id:r.sid, equipe_id:ST.equipe.id,
+    territoire_id:sidTerr(r.terr), battue_id:(ST.battues.find(b=>b.id===r.battue)||{}).sid||null,
+    nature:r.kind, espece:r.sp, comp:r.comp||{}, effectif:r.eff||totalOf(r),
+    lat:r.lat, lng:r.lng, precision_m:r.acc||null, source:r.src||'gps',
+    observe_le:new Date(r.t).toISOString(), poids_kg:r.weight||null, note:r.note||null,
+    lune:r.lune||null, lune_pct:r.lunep==null?null:r.lunep,
+    soleil_lever:r.lever||null, soleil_coucher:r.coucher||null, meteo:r.meteo||null,
+    auteur_nom:r.auteur_nom||ST.equipe.pseudo, supprime_le:r.del?new Date().toISOString():null};
+}
+function ficheDepuis(l,ex){
+  const t=terrParSid(l.territoire_id), b=batParSid(l.battue_id);
+  const r=ex||{id:uid()};
+  r.sid=l.id; r.terr=t?t.id:null; r.battue=b?b.id:null;
+  r.kind=l.nature; r.sp=l.espece; r.comp=l.comp||{}; r.eff=l.effectif||0;
+  r.lat=l.lat; r.lng=l.lng; r.acc=l.precision_m; r.src=l.source;
+  r.t=new Date(l.observe_le).getTime(); r.weight=l.poids_kg==null?null:Number(l.poids_kg);
+  r.note=l.note||''; r.lune=l.lune; r.lunep=l.lune_pct; r.lever=l.soleil_lever;
+  r.coucher=l.soleil_coucher; r.meteo=l.meteo||null; r.auteur_nom=l.auteur_nom||'';
+  r.del=!!l.supprime_le; r.maj=0;
+  return r;
+}
+function terrVers(t){
+  return {id:t.sid, equipe_id:ST.equipe.id, nom:t.nom, dep:t.dep||null,
+    ring:t.ring||[], supprime_le:t.del?new Date().toISOString():null};
+}
+function terrDepuis(l,ex){
+  const t=ex||{id:uid()};
+  t.sid=l.id; t.nom=l.nom; t.dep=l.dep||''; t.ring=l.ring||[];
+  t.del=!!l.supprime_le; t.maj=0; return t;
+}
+function batVers(b){
+  return {id:b.sid, equipe_id:ST.equipe.id, territoire_id:sidTerr(b.terr),
+    nom:b.nom, date:b.date, responsable:b.resp||null, elements:b.elements||[],
+    supprime_le:b.del?new Date().toISOString():null};
+}
+function batDepuis(l,ex){
+  const t=terrParSid(l.territoire_id);
+  const b=ex||{id:uid()};
+  b.sid=l.id; b.terr=t?t.id:null; b.nom=l.nom; b.date=l.date;
+  b.resp=l.responsable||''; b.elements=l.elements||[];
+  b.del=!!l.supprime_le; b.maj=0; return b;
+}
+
+/* ---------- synchronisation ---------- */
+async function synchroniser(silencieux){
+  if(!sbPret()||syncEnCours||!navigator.onLine)return;
+  syncEnCours=true; syncEtat('en cours');
+  try{
+    /* 1. envoi de ce qui a change ici */
+    const envoyes=[];
+    ST.terr.forEach(t=>{if(t.maj){if(!t.sid)t.sid=uuid4();envoyes.push(['territoire',terrVers(t),t])}});
+    ST.battues.forEach(b=>{if(b.maj){if(!b.sid)b.sid=uuid4();envoyes.push(['battue',batVers(b),b])}});
+    ST.recs.forEach(r=>{if(r.maj){if(!r.sid)r.sid=uuid4();envoyes.push(['fiche',ficheVers(r),r])}});
+    for(const table of ['territoire','battue','fiche']){
+      const lot=envoyes.filter(e=>e[0]===table).map(e=>e[1]);
+      if(!lot.length)continue;
+      const {error}=await sb.from(table).upsert(lot,{onConflict:'id'});
+      if(error)throw error;
+      envoyes.filter(e=>e[0]===table).forEach(e=>{e[2].maj=0});
+    }
+    /* 2. reception de ce qui a change ailleurs */
+    const depuis=(ST.sync&&ST.sync.depuis)||'1970-01-01T00:00:00Z';
+    let recu=0;
+    for(const table of ['territoire','battue','fiche']){
+      const {data,error}=await sb.from(table).select('*')
+        .eq('equipe_id',ST.equipe.id).gt('modifie_le',depuis).order('modifie_le');
+      if(error)throw error;
+      (data||[]).forEach(l=>{ if(fusionner(table,l))recu++ });
+    }
+    ST.sync={depuis:new Date(Date.now()-5000).toISOString()};
+    ST.recs.sort((a,b)=>b.t-a.t);
+    await save();
+    syncEtat();
+    if(recu){renderAll();syncTopbar()}
+    if(!silencieux)toast(envoyes.length+' envoy\u00e9'+(envoyes.length>1?'es':'e')+
+      ' \u00b7 '+recu+' re\u00e7u'+(recu>1?'es':'e'));
+  }catch(e){
+    syncEtat('erreur');
+    if(!silencieux)toast('Synchronisation impossible : '+(e.message||'r\u00e9seau'));
+  }finally{ syncEnCours=false }
+}
+
+function fusionner(table,l){
+  if(table==='territoire'){
+    const ex=terrParSid(l.id);
+    if(l.supprime_le){ if(ex){ST.terr=ST.terr.filter(x=>x!==ex);return true} return false }
+    if(ex){terrDepuis(l,ex)} else ST.terr.push(terrDepuis(l));
+    return true;
+  }
+  if(table==='battue'){
+    const ex=batParSid(l.id);
+    if(l.supprime_le){ if(ex){ST.battues=ST.battues.filter(x=>x!==ex);return true} return false }
+    if(ex){batDepuis(l,ex)} else ST.battues.push(batDepuis(l));
+    return true;
+  }
+  const ex=ST.recs.find(r=>r.sid===l.id);
+  if(l.supprime_le){ if(ex){ST.recs=ST.recs.filter(r=>r!==ex);return true} return false }
+  if(ex){ficheDepuis(l,ex)} else ST.recs.push(ficheDepuis(l));
+  return true;
+}
+
+/* ---------- temps reel ---------- */
+async function abonner(){
+  if(!sbPret())return;
+  try{ if(sbCanal){sb.removeChannel(sbCanal);sbCanal=null} }catch(e){}
+  sbCanal=sb.channel('equipe:'+ST.equipe.id);
+  ['fiche','territoire','battue'].forEach(function(table){
+    sbCanal.on('postgres_changes',
+      {event:'*',schema:'public',table:table,filter:'equipe_id=eq.'+ST.equipe.id},
+      function(p){
+        const l=p.new||p.old; if(!l)return;
+        if(fusionner(table,l)){ ST.recs.sort((a,b)=>b.t-a.t); save(); renderAll(); syncTopbar(); }
+      });
+  });
+  sbCanal.subscribe();
+}
+
+function syncEtat(etat){
+  const el=$('#eq-etat'); if(!el)return;
+  if(!ST.equipe){ el.innerHTML='<b>Application solo</b><span>Vos donn\u00e9es restent sur cet appareil</span>'; return }
+  const n=ST.recs.filter(r=>r.maj).length+ST.terr.filter(t=>t.maj).length+ST.battues.filter(b=>b.maj).length;
+  const detail= etat==='en cours' ? 'Synchronisation en cours\u2026'
+    : etat==='erreur' ? 'Derni\u00e8re tentative en \u00e9chec'
+    : n ? (n+' modification'+(n>1?'s':'')+' \u00e0 envoyer')
+    : '\u00c0 jour';
+  el.innerHTML='<b>'+esc(ST.equipe.nom)+' \u00b7 '+esc(ST.equipe.pseudo)+'</b><span>'+detail+'</span>';
+}
+
+/* ---------- interface ---------- */
+let eqMode='creer';
+function syncBoutons(){
+  const b=$('#eq-boutons'); if(!b)return;
+  b.innerHTML= ST.equipe
+    ? '<button class="chip" id="eq-sync">Synchroniser</button>'+
+      '<button class="chip" id="eq-code-voir">Voir le code</button>'+
+      '<button class="chip" id="eq-quitter" style="grid-column:1/-1">Quitter l\u2019\u00e9quipe</button>'
+    : '<button class="chip" id="eq-ouvrir" style="grid-column:1/-1">Partager avec une \u00e9quipe</button>';
+  const o=$('#eq-ouvrir'); if(o)o.onclick=ouvrirEquipe;
+  const s=$('#eq-sync');   if(s)s.onclick=function(){synchroniser(false)};
+  const v=$('#eq-code-voir'); if(v)v.onclick=montrerCode;
+  const q=$('#eq-quitter'); if(q)q.onclick=function(){
+    askConfirm('Quitter l\u2019\u00e9quipe',
+      'Vos fiches restent sur cet appareil et sur le serveur. Vous ne recevrez plus '+
+      'les observations des autres et les v\u00f4tres ne partiront plus.','Quitter',
+      async function(){await sbQuitter();syncBoutons();toast('\u00c9quipe quitt\u00e9e')});
+  };
+}
+function syncMode(){
+  $('#eq-m-creer').classList.toggle('on',eqMode==='creer');
+  $('#eq-m-rejoindre').classList.toggle('on',eqMode==='rejoindre');
+  $('#eq-bloc-creer').style.display=eqMode==='creer'?'block':'none';
+  $('#eq-bloc-code').style.display=eqMode==='rejoindre'?'block':'none';
+  $('#eq-sous').textContent=eqMode==='creer'
+    ? 'Vous obtiendrez un code \u00e0 transmettre'
+    : 'Saisissez le code re\u00e7u';
+}
+function ouvrirEquipe(){
+  eqMode='creer';syncMode();
+  $('#eq-nom').value='';$('#eq-code').value='';
+  $('#eq-pseudo').value=(ST.equipe&&ST.equipe.pseudo)||'';
+  openSheet('#sh-equipe');
+}
+function montrerCode(){
+  if(!ST.equipe)return;
+  $('#cd-sous').textContent=ST.equipe.nom;
+  $('#cd-code').textContent=ST.equipe.code||'\u2014';
+  openSheet('#sh-code');
+}
+$('#eq-m-creer').onclick=function(){eqMode='creer';syncMode()};
+$('#eq-m-rejoindre').onclick=function(){eqMode='rejoindre';syncMode()};
+$('#eq-ok').onclick=async function(){
+  const pseudo=$('#eq-pseudo').value.trim();
+  if(!pseudo){toast('Indiquez votre pr\u00e9nom');return}
+  $('#eq-ok').disabled=true;$('#eq-ok').textContent='Connexion\u2026';
+  try{
+    if(eqMode==='creer'){
+      const nom=$('#eq-nom').value.trim();
+      if(!nom){toast('Nommez l\u2019\u00e9quipe');return}
+      await sbCreerEquipe(nom,pseudo);
+      /* tout ce qui existe deja part vers le serveur */
+      ST.terr.forEach(marquer); ST.battues.forEach(marquer); ST.recs.forEach(marquer);
+      closeAll(); await synchroniser(true); abonner(); syncBoutons();
+      setTimeout(montrerCode,400);
+    }else{
+      const code=$('#eq-code').value.trim();
+      if(code.length<6){toast('Code incomplet');return}
+      await sbRejoindre(code,pseudo);
+      ST.terr.forEach(marquer); ST.battues.forEach(marquer); ST.recs.forEach(marquer);
+      closeAll(); await synchroniser(false); abonner(); syncBoutons();
+      toast('Bienvenue dans '+ST.equipe.nom);
+    }
+  }catch(e){
+    toast(/inconnu/i.test(e.message||'')?'Code inconnu':'\u00c9chec : '+(e.message||'r\u00e9seau'));
+  }finally{
+    $('#eq-ok').disabled=false;$('#eq-ok').textContent='Continuer';
+  }
+};
+
+/* rattrapage : au demarrage, au retour du reseau, et toutes les 2 minutes */
+addEventListener('online',function(){setTimeout(function(){synchroniser(true)},1500)});
+setInterval(function(){synchroniser(true)},120000);
+
 /* ---------- demarrage ---------- */
 (async function boot(){
   const st=await load();
@@ -3143,6 +3469,7 @@ function purgerDemo(d){
   /* L'application demarre toujours vide. Aucun contenu n'est installe. */
   const data=st?{terr:st.terr||[],battues:st.battues||[],recs:st.recs||[],aT:st.aT}
                :{terr:[],battues:[],recs:[],aT:'ALL'};
+  ST.equipe=(st&&st.equipe)||null; ST.sync=(st&&st.sync)||null;
   const efface=purgerDemo(data);
   ST.terr=data.terr;ST.battues=data.battues;ST.recs=data.recs;
   ST.aT=data.aT||'ALL';ST.aB=null;
@@ -3155,6 +3482,8 @@ function purgerDemo(d){
   else map.setView([46.6,2.4],6);
   suivre();
   setTimeout(rattraperMeteo,2500);
+  syncEtat(); syncBoutons();
+  if(ST.equipe){ sbInit().then(function(c){ if(c){synchroniser(true);abonner()} }); }
 })();
 
 /* ---------------------------------------------------------------
