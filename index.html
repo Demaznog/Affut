@@ -845,6 +845,11 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div class="lab">Coût indicatif</div>
     <div style="font-size:13.5px;line-height:1.5;color:var(--brume-2)">Environ un centime par photo.
       L'image est réduite à 1024 px avant l'envoi.</div>
+
+    <div class="lab">Diagnostic</div>
+    <div style="font-size:13.5px;line-height:1.5;color:var(--brume-2)">Lit le stockage de cet appareil
+      et teste la géolocalisation. Ne modifie rien tant qu'on n'y touche pas.
+      <a href="diagnostic.html" style="color:var(--ambre);display:inline-block;margin-top:6px">Ouvrir le diagnostic</a></div>
   </div>
   <div class="sfoot"><button class="big ghost" data-close="1">Annuler</button>
     <button class="big primary" id="cle-ok">Enregistrer</button></div>
@@ -1153,21 +1158,40 @@ function locDel(k){try{localStorage.removeItem(k)}catch(e){}}
 
 /* Reprise des cles de l'ancien nom. Le prefixe est passe de "brisees:" a
    "affut:". Sans cette recopie, un appareil deja installe repartirait a vide.
-   Elle s'execute une seule fois : les anciennes cles sont retirees ensuite.
-   Tout passe par locGet/locSet/locDel, donc reste sans effet si le stockage
-   est refuse (navigation privee). */
+
+   Deux regles, apprises a nos depens :
+   - la source n'est JAMAIS supprimee. Elle pese quelques Ko et reste le
+     dernier filet si la copie tourne mal. La version precedente l'effacait,
+     et pouvait l'effacer sans avoir copie.
+   - une destination existante mais VIDE ne bloque pas la copie. L'app
+     enregistre un etat vide des la premiere ouverture ; s'arreter a
+     "la destination existe" revenait a ne jamais rien reprendre.
+
+   La fonction est sans effet une fois la reprise faite, et sans effet si le
+   stockage est refuse (navigation privee). */
 (function repriseCles(){
   var paires=[['brisees:donnees','affut:donnees'],
               ['brisees:initialise','affut:initialise'],
               ['brisees:vignettes','affut:vignettes'],
               ['brisees:cle','affut:cle'],
               ['brisees:relais','affut:relais']];
+  /* vide = absent, chaine nulle, ou etat sans aucune fiche ni territoire */
+  function vide(v){
+    if(v===null||v==='')return true;
+    try{
+      var d=JSON.parse(v);
+      if(d&&typeof d==='object'&&(d.recs||d.terr||d.battues))
+        return !((d.recs&&d.recs.length)||
+                 (d.terr&&d.terr.length)||
+                 (d.battues&&d.battues.length));
+    }catch(e){}
+    return false;
+  }
   for(var i=0;i<paires.length;i++){
     var ancien=paires[i][0],nouveau=paires[i][1];
-    var v=locGet(ancien);
-    if(v===null)continue;
-    if(locGet(nouveau)===null){if(locSet(nouveau,v))locDel(ancien)}
-    else locDel(ancien);
+    var src=locGet(ancien);
+    if(vide(src))continue;
+    if(vide(locGet(nouveau)))locSet(nouveau,src);
   }
 })();
 
