@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F1815">
+<title>Affût — diagnostic</title>
+<style>
+:root{
+  --nuit:#0F1815; --anthracite:#18241F; --anthracite-2:#212E28;
+  --brume:#F4F3EA; --brume-2:#96AAA0;
+  --accent:#7FB8D6; --alerte:#C15346; --ok:#6ACB94;
+  --trait:rgba(244,243,234,.12);
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;
+}
+html{background:var(--nuit)}
+body{margin:0;padding:18px 16px calc(30px + env(safe-area-inset-bottom));
+  background:var(--nuit);color:var(--brume);font-family:var(--sans);
+  font-size:15px;line-height:1.5;-webkit-text-size-adjust:100%}
+h1{font-size:19px;margin:0 0 4px;letter-spacing:.01em}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.09em;
+  color:var(--brume-2);margin:26px 0 10px;font-weight:600}
+p{margin:0 0 10px}
+.lede{color:var(--brume-2);font-size:13px;margin-bottom:18px}
+.bloc{background:var(--anthracite);border:1px solid var(--trait);
+  border-radius:14px;padding:13px 14px;margin-bottom:10px}
+.cle{font-family:var(--mono);font-size:13px;color:var(--accent);
+  word-break:break-all;margin-bottom:6px}
+.meta{font-size:12px;color:var(--brume-2);margin-bottom:9px}
+.gros{font-size:17px;color:var(--brume)}
+.apercu{font-family:var(--mono);font-size:11px;color:var(--brume-2);
+  background:var(--nuit);border-radius:9px;padding:9px;overflow-x:auto;
+  white-space:pre-wrap;word-break:break-all;max-height:120px;margin-bottom:9px}
+button{font-family:var(--sans);font-size:14px;font-weight:600;
+  background:var(--anthracite-2);color:var(--brume);border:1px solid var(--trait);
+  border-radius:11px;padding:11px 15px;margin:0 6px 6px 0;cursor:pointer;
+  -webkit-appearance:none}
+button.primaire{background:var(--accent);color:#0B1416;border-color:transparent}
+button.danger{border-color:var(--alerte);color:var(--alerte)}
+.vide{color:var(--brume-2);font-style:italic}
+.bon{color:var(--ok)}
+.mauvais{color:var(--alerte)}
+a{color:var(--accent)}
+#zone-restaure{border-color:var(--alerte)}
+</style>
+</head>
+<body>
+
+<h1>Affût — diagnostic</h1>
+<p class="lede">Cette page ne modifie rien tant que tu n'appuies pas sur un bouton.
+Elle lit le stockage du navigateur pour cette adresse, et rien d'autre.</p>
+
+<h2>1. Adresse de cette page</h2>
+<div class="bloc">
+  <div class="cle" id="origine">—</div>
+  <div class="meta" id="protocole">—</div>
+  <p class="meta">Le stockage local est cloisonné par adresse. Si cette adresse
+  n'est pas exactement celle où tu utilisais l'app avant, c'est l'explication
+  de la disparition : tes données sont restées sur l'ancienne adresse.</p>
+</div>
+
+<h2>2. Contenu du stockage</h2>
+<div id="stockage"><div class="bloc vide">Lecture en cours…</div></div>
+
+<h2>3. Sauvegarde</h2>
+<div class="bloc">
+  <p class="meta">Télécharge tout ce qui est présent ci-dessus, tel quel,
+  avant toute manipulation. À faire en premier.</p>
+  <button class="primaire" id="b-export">Tout télécharger</button>
+  <div class="meta" id="etat-export"></div>
+</div>
+
+<h2>4. Test de géolocalisation</h2>
+<div class="bloc">
+  <p class="meta">Appuie, puis autorise si le navigateur le demande.
+  Le résultat brut s'affiche, sans interprétation.</p>
+  <button id="b-geo">Tester ma position</button>
+  <div class="apercu" id="res-geo">Pas encore testé.</div>
+  <p class="meta">Repère : Bordeaux est à environ latitude 44,84 et
+  longitude −0,58. Une latitude au-dessus de 50 te place en Angleterre.</p>
+</div>
+
+<h2>5. Restauration</h2>
+<div class="bloc" id="zone-restaure">
+  <p class="meta">À n'utiliser que si tes fiches apparaissent au point 2 sous
+  une clé que l'app ne lit plus. La restauration écrase le contenu actuel de
+  <span class="cle">affut:donnees</span>. Télécharge d'abord.</p>
+  <div id="choix-restaure"><span class="meta vide">Aucune clé restaurable détectée.</span></div>
+</div>
+
+<p class="meta"><a href="index.html">← Retour à l'application</a></p>
+
+<script>
+/* Tout accès au stockage est protégé : il lève une erreur en navigation
+   privée et interromprait le script à sa première ligne. */
+function litTout(){
+  var out=[];
+  try{
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      var v=null;
+      try{v=localStorage.getItem(k)}catch(e){v=null}
+      out.push({cle:k,val:v==null?'':v});
+    }
+  }catch(e){return null}
+  out.sort(function(a,b){return a.cle<b.cle?-1:1});
+  return out;
+}
+function poids(n){
+  if(n<1024)return n+' octets';
+  if(n<1024*1024)return (n/1024).toFixed(1)+' Ko';
+  return (n/1024/1024).toFixed(2)+' Mo';
+}
+function decrit(v){
+  var d=null;
+  try{d=JSON.parse(v)}catch(e){return null}
+  if(!d||typeof d!=='object')return null;
+  var r=[];
+  if(Array.isArray(d.recs))r.push(d.recs.length+' fiche'+(d.recs.length>1?'s':''));
+  if(Array.isArray(d.terr))r.push(d.terr.length+' territoire'+(d.terr.length>1?'s':''));
+  if(Array.isArray(d.battues))r.push(d.battues.length+' battue'+(d.battues.length>1?'s':''));
+  return r.length?r.join(' · '):null;
+}
+function texte(id,t){var e=document.getElementById(id);if(e)e.textContent=t}
+
+/* --- 1. adresse --- */
+texte('origine',location.origin+location.pathname);
+var sur=(location.protocol==='https:'||location.hostname==='localhost');
+var pr=document.getElementById('protocole');
+if(pr){
+  pr.textContent='Protocole '+location.protocol+' — '+
+    (sur?'contexte sécurisé, la géolocalisation est autorisée.'
+       :'contexte NON sécurisé : le navigateur refusera la géolocalisation.');
+  pr.className='meta '+(sur?'bon':'mauvais');
+}
+
+/* --- 2. contenu --- */
+var TOUT=litTout();
+var zone=document.getElementById('stockage');
+var restaurables=[];
+if(zone){
+  if(TOUT===null){
+    zone.innerHTML='<div class="bloc mauvais">Le navigateur refuse l\u2019acc\u00e8s au '+
+      'stockage. Navigation priv\u00e9e ou blocage des donn\u00e9es de site.</div>';
+  }else if(!TOUT.length){
+    zone.innerHTML='<div class="bloc"><span class="mauvais gros">Stockage vide</span>'+
+      '<div class="meta">Aucune cl\u00e9 pour cette adresse. Si tes donn\u00e9es existent, '+
+      'elles sont sur une autre adresse.</div></div>';
+  }else{
+    var h='';
+    for(var i=0;i<TOUT.length;i++){
+      var e=TOUT[i], d=decrit(e.val);
+      if(d)restaurables.push(e.cle);
+      h+='<div class="bloc"><div class="cle">'+e.cle+'</div>'+
+         '<div class="meta">'+poids(e.val.length)+
+         (d?' \u00b7 <span class="bon gros">'+d+'</span>':'')+'</div>'+
+         '<div class="apercu">'+e.val.slice(0,300).replace(/</g,'&lt;')+
+         (e.val.length>300?'\u2026':'')+'</div></div>';
+    }
+    zone.innerHTML=h;
+  }
+}
+
+/* --- 3. sauvegarde --- */
+var be=document.getElementById('b-export');
+if(be)be.addEventListener('click',function(){
+  if(!TOUT||!TOUT.length){texte('etat-export','Rien \u00e0 t\u00e9l\u00e9charger.');return}
+  var o={},d=new Date();
+  for(var i=0;i<TOUT.length;i++)o[TOUT[i].cle]=TOUT[i].val;
+  var paq={releve:'affut-diagnostic',adresse:location.origin+location.pathname,
+    date:d.toISOString(),cles:o};
+  try{
+    var b=new Blob([JSON.stringify(paq,null,1)],{type:'application/json'});
+    var u=URL.createObjectURL(b),a=document.createElement('a');
+    function p2(n){return (n<10?'0':'')+n}
+    a.href=u;
+    a.download='affut-stockage-'+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+'.json';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(u)},4000);
+    texte('etat-export',TOUT.length+' cl\u00e9(s) export\u00e9e(s).');
+  }catch(err){texte('etat-export','\u00c9chec : '+err.message)}
+});
+
+/* --- 4. geolocalisation --- */
+var bg=document.getElementById('b-geo');
+if(bg)bg.addEventListener('click',function(){
+  var r=document.getElementById('res-geo');
+  if(!r)return;
+  if(!navigator.geolocation){r.textContent='navigator.geolocation absent.';return}
+  r.textContent='Demande en cours\u2026';
+  navigator.geolocation.getCurrentPosition(function(p){
+    var c=p.coords;
+    r.textContent='latitude   '+c.latitude.toFixed(5)+'\n'+
+      'longitude  '+c.longitude.toFixed(5)+'\n'+
+      'precision  '+Math.round(c.accuracy)+' m\n'+
+      'horodatage '+new Date(p.timestamp).toLocaleString('fr-FR');
+  },function(err){
+    var noms={1:'PERMISSION_DENIED (autorisation refus\u00e9e)',
+              2:'POSITION_UNAVAILABLE (position indisponible)',
+              3:'TIMEOUT (d\u00e9lai d\u00e9pass\u00e9)'};
+    r.textContent='\u00c9CHEC code '+err.code+'\n'+(noms[err.code]||'')+'\n'+
+      (err.message||'');
+  },{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+});
+
+/* --- 5. restauration --- */
+var cr=document.getElementById('choix-restaure');
+if(cr&&restaurables.length){
+  var hh='';
+  for(var j=0;j<restaurables.length;j++)
+    hh+='<button class="danger" data-cle="'+restaurables[j]+'">Restaurer depuis '+
+        restaurables[j]+'</button>';
+  hh+='<div class="meta" id="etat-restaure"></div>';
+  cr.innerHTML=hh;
+  var bs=cr.querySelectorAll('button[data-cle]');
+  for(var k=0;k<bs.length;k++)bs[k].addEventListener('click',function(){
+    var src=this.getAttribute('data-cle');
+    if(src==='affut:donnees'){texte('etat-restaure','C\u2019est d\u00e9j\u00e0 la cl\u00e9 que l\u2019app lit.');return}
+    if(!window.confirm('Copier '+src+' vers affut:donnees ?\n\nLe contenu actuel de affut:donnees sera remplac\u00e9.'))return;
+    try{
+      var v=localStorage.getItem(src);
+      localStorage.setItem('affut:donnees',v);
+      localStorage.setItem('affut:initialise','1');
+      var relu=localStorage.getItem('affut:donnees');
+      texte('etat-restaure',(relu&&relu.length===v.length)
+        ? 'Copie faite. Recharge l\u2019application.'
+        : '\u00c9chec de la relecture : le navigateur n\u2019a pas gard\u00e9 la copie.');
+    }catch(err){texte('etat-restaure','\u00c9chec : '+err.message)}
+  });
+}
+</script>
+
+</body>
+</html>
