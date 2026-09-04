@@ -847,6 +847,12 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <input type="file" id="sp-file2" accept="image/*" style="display:none">
   </div>
   <div id="sp-ia"></div>
+  <div style="padding:0 14px 10px">
+    <div class="seg" id="sp-quoi">
+      <button data-q="faune" class="on">Faune</button>
+      <button data-q="arbre">Arbres</button>
+    </div>
+  </div>
   <div class="tagbar" id="sp-tags"></div>
   <div class="sbody" id="sp-list"></div>
 </div>
@@ -2675,7 +2681,8 @@ function renderSpeciesList(){
         '<span class="st '+b.c+'">'+b.t+'</span></button>'}).join('')}).join('');
   observerVignettes();
   $('#sp-list').innerHTML=html||'<div class="empty">Aucune esp\u00e8ce ne correspond.<br>Essayez sans filtre d\u2019\u00e9tiquette.</div>';
-  $('#sp-count').textContent=count+' sur '+DB.especes.length+' esp\u00e8ces';
+  const total=especesAdmises().length, arb=(draft&&draft.kind==='a');
+  $('#sp-count').textContent=count+' sur '+total+(arb?' essences':' esp\u00e8ces');
 }
 $('#sp-q').oninput=function(e){PICK.q=e.target.value;renderSpeciesList()};
 $('#sp-tags').onclick=function(e){const b=e.target.closest('[data-t]');if(!b)return;
@@ -2685,6 +2692,23 @@ $('#sp-list').onclick=function(e){
   if(v){e.stopPropagation();ouvrirPhoto(v.dataset.vig);return}
   const b=e.target.closest('[data-sp]');if(!b)return;
   draft.sp=b.dataset.sp;draft.comp={};draft.eff=0;closeSheet('#sh-species');openEntry()};
+/* La nature de la fiche se choisissait apres l'espece : les essences
+   restaient donc inaccessibles. Ce selecteur ouvre les deux catalogues
+   des l'ecran de choix. */
+$('#sp-quoi').onclick=function(e){
+  const b=e.target.closest('[data-q]'); if(!b)return;
+  const arb=(b.dataset.q==='arbre');
+  if(draft){ draft.kind = arb ? 'a' : (draft.kind==='a'?'o':draft.kind); }
+  syncQuoi(); renderTagbar(); renderSpeciesList();
+};
+function syncQuoi(){
+  const arb=(draft&&draft.kind==='a');
+  $$('#sp-quoi button').forEach(x=>x.classList.toggle('on',
+    (x.dataset.q==='arbre')===arb));
+  $('#sp-photo').innerHTML=$('#sp-photo').innerHTML;
+  const n=$('#ph-note');
+  const t=$('#sp-tags'); if(t)t.style.display=arb?'none':'flex';
+}
 $('#sp-back').onclick=function(){
   closeSheet('#sh-species');
   if(draft&&draft.sp)setTimeout(openEntry,180); else draft=null;
@@ -2765,6 +2789,7 @@ async function ouvrirPhoto(code){
 $('#lb-close').onclick=function(){$('#lightbox').classList.remove('on');$('#lb-img').removeAttribute('src')};
 $('#lightbox').onclick=function(e){if(e.target.id==='lightbox')$('#lb-close').click()};
 function openPicker(){
+  setTimeout(syncQuoi,0);
   $('#sp-q').value=PICK.q;renderTagbar();renderSpeciesList();
   $('#sp-back').style.display=(draft&&draft.sp)?'grid':'none';
   openSheet('#sh-species');
