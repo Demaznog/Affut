@@ -203,6 +203,7 @@ button:active{transform:scale(.965)}
 .seg button.on{background:var(--foret);border-color:var(--foret-clair);color:#fff}
 .seg button.on.harv{background:var(--sang);border-color:#D9705F}
 .seg button.on.arb{background:#6E5A34;border-color:#A98D50;color:#fff}
+
 .badge.a{background:#6E5A34}
 .mk.a{background:#6E5A34}
 .agebox{background:var(--anthracite-3);border:1px solid var(--trait);border-radius:20px;
@@ -914,7 +915,6 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
       <button data-k="o" class="on">Observation</button>
       <button data-k="p" class="harv">Prélèvement</button>
       <button data-k="i" class="ind">Indice</button>
-      <button data-k="a" class="arb">Arbre</button>
     </div>
     <div id="e-arbre" style="display:none">
       <div class="lab">Photographies</div>
@@ -2868,10 +2868,8 @@ $('#e-comp').onclick=function(e){
   renderComp()};
 $('#e-kind').onclick=function(e){
   const b=e.target.closest('[data-k]');if(!b)return;
-  const av=draft.kind; draft.kind=b.dataset.k;
-  const veutArbre=(draft.kind==='a'), estUnArbre=estArbre(draft.sp);
-  if(veutArbre!==estUnArbre){ draft.sp=null; openPicker(); return }
-  if(av!==draft.kind)openEntry();
+  if(draft.kind==='a')return;          /* un arbre n'est ni vu, ni pris, ni indice */
+  if(draft.kind!==b.dataset.k){ draft.kind=b.dataset.k; openEntry() }
 };
 $('#e-change').onclick=openPicker;
 function majQuand(){
@@ -3194,6 +3192,7 @@ function openEntry(){
   $('#e-moment').textContent=nomMoment(momentDe(draft));
   $('#e-ctx').innerHTML=blocContexte(draft);
   const arb=draft.kind==='a';
+  $('#e-kind').style.display=arb?'none':'flex';
   $('#e-arbre').style.display=arb?'block':'none';
   $('#e-complab').style.display=arb?'none':'block';
   $('#e-comp').style.display=arb?'none':'block';
