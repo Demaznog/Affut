@@ -215,6 +215,17 @@ button:active{transform:scale(.965)}
 .agebox .jauge i{display:block;height:100%;background:var(--grad)}
 .agebox .pct{font-family:var(--mono);font-size:10.5px;color:var(--brume-2);margin-top:6px}
 .lotvues{display:flex;gap:9px;flex-wrap:wrap}
+.mesl{display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:14px;
+  background:var(--anthracite-2);border:1px solid var(--trait);margin-bottom:6px}
+.mesl .md{flex:1;min-width:0;font-size:13px;color:var(--brume-2)}
+.mesl .mc{font-family:var(--mono);font-size:15px;font-weight:600}
+.mesl .mx{width:26px;height:26px;border-radius:50%;background:rgba(193,83,70,.16);
+  color:var(--sang);display:grid;place-items:center;font-size:12px;flex:none}
+.mesadd{width:100%;padding:11px;border-radius:14px;background:var(--anthracite-2);
+  border:1px dashed var(--trait2);color:var(--brume-2);font-size:13.5px;font-weight:550}
+.mesgain{background:var(--anthracite-3);border-left:3px solid var(--foret-clair);
+  border-radius:6px 14px 14px 6px;padding:11px 13px;margin:8px 0 2px;font-size:12.5px;
+  line-height:1.5;color:var(--brume)}
 .lotcase{display:flex;flex-direction:column;align-items:center;gap:5px;width:84px}
 .lotleg{font-size:10.5px;color:var(--brume-2);text-align:center;line-height:1.25}
 .lotv{position:relative;width:84px;height:84px;border-radius:15px;overflow:hidden;
@@ -953,6 +964,11 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
       <div class="chipgrid" id="e-port"></div>
       <div class="lab">Hauteur estimée (m)</div>
       <input type="number" id="e-haut" inputmode="numeric" placeholder="ex. 24">
+      <div class="lab">Historique des mesures</div>
+      <div id="e-mes"></div>
+      <div class="lab">Comptage de cernes <span style="color:var(--brume-2);
+        text-transform:none;letter-spacing:0">— si l'occasion se présente</span></div>
+      <div id="e-cernes"></div>
       <div class="lab">Marqueurs de vieillissement</div>
       <div id="e-marq"></div>
       <div class="note">Ce sont ces marqueurs, plus que l'âge, qui font la valeur
@@ -1049,7 +1065,32 @@ const MILIEUX=[{"k":"futaie","n":"Futaie serrée","d":"concurrence forte, houppi
 const MARQUEURS=[{"k":"cavite","n":"Cavité","d":"trou de pic, chandelle creuse"},{"k":"dendro","n":"Dendrotelme","d":"cavité retenant l'eau"},{"k":"bois_mort","n":"Bois mort dans le houppier","d":"branches sèches sur pied"},{"k":"ecorce","n":"Écorce déplaquée","d":"plaques décollées, abri à chiroptères"},{"k":"champ","n":"Champignon lignivore","d":"polypore, amadouvier"},{"k":"fente","n":"Fente ou blessure","d":"éclat de foudre, plaie ouverte"},{"k":"seve","n":"Coulée de sève","d":"suintement sur le tronc"},{"k":"lierre","n":"Lierre développé","d":"couverture importante"},{"k":"gui","n":"Gui","d":"touffes dans le houppier"},{"k":"nid","n":"Nid ou aire occupée","d":"rapace, corvidé, cigogne"}];
 const estArbre=c=>!!(SP[c]&&SP[c].categorie==='arbre');
 
-function ageArbre(code,circ,milieu){
+/* ---------------------------------------------------------------
+   MESURES REPETEES
+   Deux tours de tronc separes de quelques annees donnent
+   l'accroissement reel de CET arbre, sur CE sol. Rien ne vaut cela :
+   l'abaque n'est qu'un pis-aller en attendant la seconde mesure.
+--------------------------------------------------------------- */
+const AN=365.25*864e5;
+function accroissementObserve(mes){
+  if(!mes||mes.length<2)return null;
+  const l=mes.slice().sort((a,b)=>a.t-b.t);
+  const p=l[0], d=l[l.length-1];
+  const ans=(d.t-p.t)/AN;
+  if(ans<0.75)return null;                 /* moins d'un an : le bruit domine */
+  const gain=d.circ-p.circ;
+  if(gain<=0)return {ans:ans,nul:true};    /* arbre a l'arret ou mesure douteuse */
+  return {a:gain/ans, ans:ans, gain:gain, n:l.length};
+}
+/* Fiabilite d'un comptage de cernes selon son origine. Une branche ne
+   vaut pas une souche : ses cernes sont plus etroits et excentres. */
+const CERNES=[
+  {k:'souche',n:'Souche ou arbre abattu',d:'même essence, même station',f:.10},
+  {k:'carotte',n:'Carotte de sondage',d:'tarière de Pressler',f:.12},
+  {k:'branche',n:'Grosse branche tombée',d:'indicatif : cernes plus étroits',f:.30}
+];
+
+function ageArbre(code,circ,milieu,mes,cernes){
   const d=SP[code]&&SP[code].dendro;
   if(!d||!circ||circ<10)return null;
   /* Un palmier n'a pas de bois secondaire : son stipe ne s'epaissit pas
@@ -1057,6 +1098,23 @@ function ageArbre(code,circ,milieu){
   if(!d.futaie)return {impossible:true};
   const f=(milieu==null?0.5:milieu);
   let a=d.futaie+(d.libre-d.futaie)*f;
+  let source=null, incert=null;
+
+  /* un comptage de cernes fixe l'accroissement de l'essence sur place */
+  if(cernes&&cernes.cernes>0&&cernes.circ>0){
+    const obs=cernes.circ/cernes.cernes;
+    if(obs>0.05&&obs<12){
+      const C=CERNES.find(x=>x.k===cernes.origine);
+      a=obs; source='cernes'; incert=C?C.f:.25;
+    }
+  }
+  /* mais rien ne vaut la croissance mesuree sur l'arbre lui-meme */
+  const obs=accroissementObserve(mes);
+  if(obs&&!obs.nul&&obs.a>0.02&&obs.a<12){
+    a=obs.a; source='mesures';
+    /* plus l'intervalle est long, plus l'accroissement est sur */
+    incert=Math.max(.06,Math.min(.22,0.9/Math.max(1,obs.ans)));
+  }
   /* frein de croissance des gros bois : sans lui, un chene de 9 m
      ressortirait a 360 ans au lieu de pres de 600. */
   if(circ>300)a*=1-Math.min(.45,(circ-300)/1600);
@@ -1064,13 +1122,21 @@ function ageArbre(code,circ,milieu){
   const arrondi=x=>Math.max(5,Math.round(x/5)*5);
   /* accroissement moins bien etabli : la fourchette s'elargit plutot que
      de donner une precision qu'on n'a pas */
-  const e=(d.sur===false)?.40:.25;
+  const e = incert!=null ? incert : ((d.sur===false)?.40:.25);
   return {centre:Math.round(c), bas:arrondi(c*(1-e)), haut:arrondi(c*(1+e)),
           longevite:d.longevite, part:Math.round(c/d.longevite*100),
-          large:(d.sur===false&&!d.herite), herite:d.herite||null};
+          large:(d.sur===false&&!d.herite&&!source), herite:(source?null:(d.herite||null)),
+          source:source, obs:obs, accr:+a.toFixed(2), incert:Math.round(e*100)};
 }
 function diametre(circ){ return circ?Math.round(circ/Math.PI):null }
 
+/* Les etiquettes de statut cynegetique sont retirees des essences :
+   « Non chassable » sur un if n'apprend rien et occupe une ligne. */
+DB.especes.forEach(function(e){
+  if(e.categorie!=='arbre')return;
+  e.tags=(e.tags||[]).filter(function(t){
+    return ['Non chassable','Chassable','Esp\u00e8ce prot\u00e9g\u00e9e','Arbre'].indexOf(t)<0; });
+});
 const SP={}, CLS=DB.jeux_de_classes;
 DB.especes.forEach(function(s){SP[s.code]=s});
 const CATS=DB.categories;
@@ -1257,7 +1323,7 @@ function composition(r){
 function heading(r){const s=SP[r.sp],n=totalOf(r);
   if(r.kind==='a'){
     const mi=(MILIEUX.find(m=>m.k===r.milieu)||{}).f;
-    const a=ageArbre(r.sp,r.circ,mi);
+    const a=ageArbre(r.sp,r.circ,mi,r.mes,r.cernes);
     return s.nom+((a&&!a.impossible)?' \u00b7 '+a.bas+'\u2013'+a.haut+' ans':'');
   }
   if(r.kind==='i')return 'Indice de pr\u00e9sence \u2014 '+s.nom;
@@ -3243,7 +3309,7 @@ function ajouterEssence(latin,nomCommun,famille){
     taxon:'arbre',classes:'arbre',statut_national:'non_chassable',
     esod_groupe:null,collectif:null,peser:false,predateur:false,
     invasive:false,verifier_localement:false,
-    tags:['Arbres remarquables','Arbre','Non chassable','Ajout\u00e9e'],
+    tags:['Arbres remarquables','Ajout\u00e9e'],
     dendro:d, ajoutee:true, famille:famille||null};
   DB.especes.push(e); SP[code]=e;
   const b=(latin||'').split(/\s+/).slice(0,2).join(' ').toLowerCase();
@@ -3269,12 +3335,84 @@ function renderArbre(){
     '<span class="cas">\u2713</span></button>').join('');
   $('#e-haut').value=draft.haut||'';
   $('#e-age').innerHTML=blocAge(draft);
-  syncPhotos();
+  renderMesures(); renderCernes(); syncPhotos();
   $('#e-save').disabled=!(draft.sp&&c>=10);
 }
+/* ---------- historique et cernes ---------- */
+function renderMesures(){
+  if(!draft)return;
+  const z=$('#e-mes'); if(!z)return;
+  const l=(draft.mes||[]).slice().sort((a,b)=>a.t-b.t);
+  const obs=accroissementObserve(l);
+  z.innerHTML=
+    l.map(function(m,i){
+      return '<div class="mesl"><span class="mc">'+m.circ+' cm</span>'+
+        '<span class="md">'+fmtDay(new Date(m.t))+'</span>'+
+        '<span class="mx" data-mesx="'+i+'">\u2715</span></div>';
+    }).join('')+
+    '<button class="mesadd" data-mesadd="1">+ Consigner la mesure du jour'+
+      (draft.circ?' \u00b7 '+draft.circ+' cm':'')+'</button>'+
+    (obs&&!obs.nul
+      ? '<div class="mesgain">Croissance mesur\u00e9e : <b>'+obs.a.toFixed(2)+' cm par an</b> '+
+        'sur '+obs.ans.toFixed(1)+' ans. L\u2019\u00e2ge ne repose plus sur un abaque.</div>'
+      : obs&&obs.nul
+      ? '<div class="mesgain">Aucune croissance mesurable entre les deux relev\u00e9s. '+
+        'V\u00e9rifiez la hauteur de mesure, ou l\u2019arbre est \u00e0 l\u2019arr\u00eat.</div>'
+      : l.length===1
+      ? '<div class="note" style="margin-top:8px">Un seul relev\u00e9 : revenez dans trois '+
+        '\u00e0 cinq ans, l\u2019\u00e9cart donnera la croissance r\u00e9elle de cet arbre.</div>'
+      : '');
+}
+function renderCernes(){
+  if(!draft)return;
+  const z=$('#e-cernes'); if(!z)return;
+  const c=draft.cernes||{};
+  z.innerHTML=
+    '<div class="chipgrid">'+CERNES.map(x=>'<button class="chip'+(c.origine===x.k?' on':'')+
+      '" data-cor="'+x.k+'" style="grid-column:1/-1;text-align:left;padding:12px 14px">'+
+      '<b>'+x.n+'</b><br><span style="font-size:11.5px;opacity:.75">'+x.d+'</span></button>').join('')+
+    '</div>'+
+    (c.origine
+      ? '<div style="display:flex;gap:8px;margin-top:8px">'+
+        '<input type="number" id="cer-n" inputmode="numeric" placeholder="cernes comptés" '+
+          'value="'+(c.cernes||'')+'" style="flex:1">'+
+        '<input type="number" id="cer-c" inputmode="numeric" placeholder="tour, cm" '+
+          'value="'+(c.circ||'')+'" style="flex:1">'+
+        '</div>'+
+        (c.cernes&&c.circ
+          ? '<div class="mesgain">Soit <b>'+(c.circ/c.cernes).toFixed(2)+' cm par an</b> '+
+            'pour cette essence, sur cette station.</div>'
+          : '<div class="note" style="margin-top:8px">Comptez les cernes et mesurez le tour '+
+            'au m\u00eame endroit.</div>')
+      : '');
+}
+$('#e-mes').onclick=function(e){
+  const x=e.target.closest('[data-mesx]');
+  if(x){ draft.mes.splice(+x.dataset.mesx,1); renderArbre(); return }
+  if(e.target.closest('[data-mesadd]')){
+    if(!draft.circ){toast('Saisissez d\u2019abord la circonf\u00e9rence');return}
+    draft.mes=draft.mes||[];
+    const jour=new Date(draft.t||Date.now()).setHours(12,0,0,0);
+    if(draft.mes.some(m=>Math.abs(m.t-jour)<864e5)){toast('Mesure d\u00e9j\u00e0 consign\u00e9e ce jour');return}
+    draft.mes.push({t:jour,circ:draft.circ});
+    renderArbre();
+  }
+};
+$('#e-cernes').onclick=function(e){
+  const b=e.target.closest('[data-cor]'); if(!b)return;
+  draft.cernes=draft.cernes||{};
+  draft.cernes.origine=(draft.cernes.origine===b.dataset.cor)?null:b.dataset.cor;
+  renderArbre();
+};
+$('#e-cernes').oninput=function(e){
+  if(!draft.cernes)return;
+  if(e.target.id==='cer-n')draft.cernes.cernes=parseInt(e.target.value,10)||null;
+  if(e.target.id==='cer-c')draft.cernes.circ=parseFloat(e.target.value)||null;
+  $('#e-age').innerHTML=blocAge(draft);
+};
 function blocAge(r){
   const mi=(MILIEUX.find(m=>m.k===r.milieu)||{}).f;
-  const a=ageArbre(r.sp,r.circ,mi);
+  const a=ageArbre(r.sp,r.circ,mi,r.mes,r.cernes);
   if(a&&a.impossible)return '<div class="note" style="margin-top:14px">Le stipe d\u2019un palmier '+
     'ne s\u2019\u00e9paissit pas avec l\u2019\u00e2ge : sa circonf\u00e9rence ne permet aucune estimation. '+
     'Notez plut\u00f4t sa hauteur.</div>';
@@ -3285,6 +3423,12 @@ function blocAge(r){
     '<div class="lib">'+(r.milieu?('croissance '+((MILIEUX.find(m=>m.k===r.milieu)||{}).n||'').toLowerCase())
       :'pr\u00e9cisez le milieu pour affiner')+
     (tetard?'<br>Tronc renfl\u00e9 par les tailles : l\u2019\u00e2ge est probablement sous-estim\u00e9.':'')+
+    (a.source==='mesures'
+      ? '<br><b style="color:var(--foret-clair)">Accroissement mesur\u00e9 sur cet arbre</b> : '+
+        a.accr+' cm/an sur '+a.obs.ans.toFixed(1)+' ans'
+      : a.source==='cernes'
+      ? '<br>Accroissement issu d\u2019un comptage de cernes : '+a.accr+' cm/an'
+      : '')+
     (a.large?'<br>Essence peu document\u00e9e : fourchette volontairement large.':'')+
     (a.herite?'<br>Accroissement d\u00e9duit '+
       (a.herite==='genre'?'des autres esp\u00e8ces du genre':'d\u2019une moyenne')+
@@ -3292,7 +3436,11 @@ function blocAge(r){
     '</div>'+
     '<div class="jauge"><i style="width:'+Math.min(100,a.part)+'%"></i></div>'+
     '<div class="pct">'+Math.min(100,a.part)+'\u2009% de la long\u00e9vit\u00e9 courante de l\u2019essence, '+
-    'environ '+a.longevite+' ans</div></div>';
+    'environ '+a.longevite+' ans</div>'+
+    (a.source?'':'<div class="pct" style="color:var(--ambre);margin-top:8px">'+
+      'Remesurez ce tronc dans quelques ann\u00e9es : la fourchette se resserrera '+
+      'nettement.</div>')+
+    '</div>';
 }
 let phRole=null;
 $('#e-photos').onclick=function(e){
@@ -4083,6 +4231,7 @@ function ficheVers(r){
     lat:r.lat, lng:r.lng, precision_m:r.acc||null, source:r.src||'gps',
     observe_le:new Date(r.t).toISOString(), poids_kg:r.weight||null, note:r.note||null,
     photos:(r.photos||[]).map(p=>({role:p.role,chemin:p.chemin||null})),
+    mes:r.mes||null, cernes:r.cernes||null,
     circ:r.circ||null, haut:r.haut||null, milieu:r.milieu||null,
     port:r.port||null, marq:r.marq||null,
     lune:r.lune||null, lune_pct:r.lunep==null?null:r.lunep,
@@ -4105,6 +4254,7 @@ function ficheDepuis(l,ex){
       return {role:p.role,chemin:p.chemin,vignette:v?v.vignette:null,attente:false};
     });
   }
+  r.mes=l.mes||null; r.cernes=l.cernes||null;
   r.circ=l.circ||null; r.haut=l.haut||null;
   r.milieu=l.milieu||null; r.port=l.port||null; r.marq=l.marq||null;
   r.lune=l.lune; r.lunep=l.lune_pct; r.lever=l.soleil_lever;
