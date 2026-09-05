@@ -214,6 +214,14 @@ button:active{transform:scale(.965)}
 .agebox .jauge{height:8px;border-radius:4px;background:var(--anthracite-2);margin-top:12px;overflow:hidden}
 .agebox .jauge i{display:block;height:100%;background:var(--grad)}
 .agebox .pct{font-family:var(--mono);font-size:10.5px;color:var(--brume-2);margin-top:6px}
+.lotvues{display:flex;gap:9px;flex-wrap:wrap}
+.lotv{position:relative;width:84px;height:84px;border-radius:15px;overflow:hidden;
+  border:1.5px solid var(--foret-clair)}
+.lotv img{width:100%;height:100%;object-fit:cover;display:block}
+.lotx{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;
+  background:rgba(11,20,22,.82);color:#fff;display:grid;place-items:center;font-size:12px}
+.lotadd{width:84px;height:84px;border-radius:15px;background:var(--anthracite-2);
+  border:1.5px dashed var(--trait2);color:var(--brume-2);font-size:27px;display:grid;place-items:center}
 .iacand.hors{opacity:.5}
 .iacand.hors .cf{color:var(--brume-2)}
 .phbox{position:relative;display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;
@@ -2703,6 +2711,7 @@ $('#sp-quoi').onclick=function(e){
   const b=e.target.closest('[data-q]'); if(!b)return;
   const arb=(b.dataset.q==='arbre');
   if(draft){ draft.kind = arb ? 'a' : (draft.kind==='a'?'o':draft.kind); }
+  lotPhotos=[]; const z=$('#sp-ia'); if(z)z.innerHTML='';
   syncQuoi(); renderTagbar(); renderSpeciesList();
 };
 function syncQuoi(){
@@ -2794,6 +2803,7 @@ $('#lb-close').onclick=function(){$('#lightbox').classList.remove('on');$('#lb-i
 $('#lightbox').onclick=function(e){if(e.target.id==='lightbox')$('#lb-close').click()};
 function openPicker(){
   setTimeout(syncQuoi,0);
+  lotPhotos=[];
   $('#sp-q').value=PICK.q;renderTagbar();renderSpeciesList();
   $('#sp-back').style.display=(draft&&draft.sp)?'grid':'none';
   openSheet('#sh-species');
@@ -4738,9 +4748,15 @@ function appliquerLectureArbre(j){
 async function identifierArbre(b64,apercu){
   /* on joint la photo d'ensemble si elle existe : le port aide autant
      que la feuille, et Pl@ntNet accepte les deux d'un coup */
-  const ens=(draft.photos||[]).find(p=>p.role==='ensemble'&&p.b64);
-  const images=[{b64:b64,organe:(phRole==='ensemble'?'habit':'leaf')}];
-  if(ens&&phRole!=='ensemble')images.push({b64:ens.b64,organe:'habit'});
+  let images;
+  if(lotPhotos.length){
+    /* premiere vue = le port, seconde = la feuille */
+    images=lotPhotos.map((p,i)=>({b64:p.b64,organe:i===0?'habit':'leaf'}));
+  }else{
+    const ens=(draft.photos||[]).find(p=>p.role==='ensemble'&&p.b64);
+    images=[{b64:b64,organe:(phRole==='ensemble'?'habit':'leaf')}];
+    if(ens&&phRole!=='ensemble')images.push({b64:ens.b64,organe:'habit'});
+  }
   try{
     const j=await identifierFlore(images);
     const cands=candidatsFlore(j);
@@ -4789,14 +4805,68 @@ $('#sp-photo').onclick=function(){lancerPhoto('#sp-file')};      /* appareil pho
 $('#sp-galerie').onclick=function(){lancerPhoto('#sp-file2')};   /* photo deja prise */
 $('#sp-reglages').onclick=function(){closeSheet('#sh-species');setTimeout(ouvrirReglagesIA,240)};
 
+/* Sur un arbre, deux vues valent bien mieux qu'une : le port et la
+   feuille. Elles s'accumulent donc au lieu de se remplacer, et partent
+   ensemble a l'identification. */
+let lotPhotos=[];
 async function traiterPhoto(e){
   const f=e.target.files&&e.target.files[0];e.target.value='';
   if(!f)return;
   if(!/^image\//.test(f.type||'')){toast('Ce fichier n\u2019est pas une image');return}
   try{
     const img=await reduireImage(f,1024);
-    await identifier(img.b64,img.url);
+    if(draft&&draft.kind==='a'){
+      ajouterAuLot(img);
+    }else{
+      await identifier(img.b64,img.url);
+    }
   }catch(err){toast('Photo illisible \u2014 essayez en JPEG')}
+}
+function ajouterAuLot(img){
+  /* deux vues au plus : au-dela, Pl@ntNet n'y gagne rien et la plus
+     ancienne cede la place */
+  if(lotPhotos.length>=2)lotPhotos.shift();
+  lotPhotos.push(img);
+  renderLot();
+  if(lotPhotos.length===1)toast('Ajoutez la feuille ou l\u2019\u00e9corce, ou identifiez');
+}
+function renderLot(){
+  const z=$('#sp-ia'); if(!z)return;
+  if(!lotPhotos.length){z.innerHTML='';return}
+  z.innerHTML='<div class="iabox"><div class="lotvues">'+
+    lotPhotos.map((p,i)=>'<div class="lotv"><img src="'+p.url+'" alt="">'+
+      '<span class="lotx" data-lotx="'+i+'">\u2715</span></div>').join('')+
+    (lotPhotos.length<2?'<button class="lotadd" data-lotadd="1">+</button>':'')+
+    '</div>'+
+    '<div class="note" style="margin:10px 0 0">'+
+      (lotPhotos.length<2
+        ? 'Une seconde vue am\u00e9liore beaucoup l\u2019identification : '+
+          'le port de loin, puis une feuille \u00e0 plat.'
+        : 'Les deux vues partiront ensemble.')+
+    '</div>'+
+    '<button class="big primary" data-lotgo="1" style="height:48px;margin-top:12px;width:100%">'+
+      'Identifier'+(lotPhotos.length>1?' \u2014 '+lotPhotos.length+' vues':'')+'</button>'+
+    '</div>';
+  z.onclick=function(e){
+    const x=e.target.closest('[data-lotx]');
+    if(x){lotPhotos.splice(+x.dataset.lotx,1);renderLot();return}
+    if(e.target.closest('[data-lotadd]')){lancerPhoto('#sp-file');return}
+    if(e.target.closest('[data-lotgo]')){lancerIdentificationLot();return}
+    const b=e.target.closest('[data-ia]'); if(b)choisirCandidat(b.dataset.ia);
+  };
+}
+async function lancerIdentificationLot(){
+  if(!lotPhotos.length)return;
+  /* les vues photographiees ici alimentent aussi la fiche : on ne
+     redemande pas a l'utilisateur de refaire le meme geste */
+  draft.photos=draft.photos||[];
+  const roles=['ensemble','detail'];
+  lotPhotos.forEach(function(p,i){
+    const role=roles[i]||'detail';
+    draft.photos=draft.photos.filter(x=>x.role!==role);
+    draft.photos.push({role:role,vignette:p.url,attente:true,b64:p.b64});
+  });
+  await identifierArbre(lotPhotos[lotPhotos.length-1].b64, lotPhotos[0].url);
 }
 $('#sp-file').onchange=traiterPhoto;
 $('#sp-file2').onchange=traiterPhoto;
