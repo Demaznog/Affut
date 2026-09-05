@@ -3316,6 +3316,7 @@ function ajouterEssence(latin,nomCommun,famille){
   if(b)LATIN[b]=code;
   ST.essences=ST.essences||[]; ST.essences.push(e);
   save();
+  if(sbPret())pousserEssences().catch(function(){});
   return code;
 }
 
@@ -4301,6 +4302,9 @@ async function synchroniser(silencieux){
       if(error)throw error;
       envoyes.filter(e=>e[0]===table).forEach(e=>{e[2].maj=0});
     }
+    /* les essences d'abord : une fiche peut s'y referer */
+    await pousserEssences();
+    const nEss=await tirerEssences();
     /* 2. reception de ce qui a change ailleurs */
     const depuis=(ST.sync&&ST.sync.depuis)||'1970-01-01T00:00:00Z';
     let recu=0;
@@ -4347,6 +4351,43 @@ function fusionner(table,l){
   if(l.supprime_le){ if(ex){ST.recs=ST.recs.filter(r=>r!==ex);return true} return false }
   if(ex){ficheDepuis(l,ex)} else ST.recs.push(ficheDepuis(l));
   return true;
+}
+
+/* Les essences ajoutees depuis Pl@ntNet suivent l'equipe : sans cela,
+   un arbre note par l'un afficherait un code inconnu chez l'autre. */
+function essenceVers(e){
+  return {code:e.code, nom:e.nom, latin:e.latin, famille:e.famille||null,
+          dendro:e.dendro, equipes:[ST.equipe.id]};
+}
+async function pousserEssences(){
+  if(!sbPret())return;
+  const l=(ST.essences||[]).filter(e=>!e.envoyee);
+  if(!l.length)return;
+  const {error}=await sb.from('essence').upsert(l.map(essenceVers),{onConflict:'code'});
+  if(error)throw error;
+  l.forEach(e=>{e.envoyee=true});
+}
+async function tirerEssences(){
+  if(!sbPret())return 0;
+  const {data,error}=await sb.from('essence').select('*')
+    .contains('equipes',[ST.equipe.id]);
+  if(error)throw error;
+  let n=0;
+  (data||[]).forEach(function(l){
+    if(SP[l.code])return;
+    const e={code:l.code,nom:l.nom,latin:l.latin,famille:l.famille,
+      categorie:'arbre',categorie_nom:'Arbres remarquables',taxon:'arbre',
+      classes:'arbre',statut_national:'non_chassable',esod_groupe:null,
+      collectif:null,peser:false,predateur:false,invasive:false,
+      verifier_localement:false,tags:['Arbres remarquables','Ajout\u00e9e'],
+      dendro:l.dendro,ajoutee:true,envoyee:true};
+    DB.especes.push(e); SP[e.code]=e;
+    const b=(e.latin||'').split(/\s+/).slice(0,2).join(' ').toLowerCase();
+    if(b&&!LATIN[b])LATIN[b]=e.code;
+    ST.essences=ST.essences||[]; ST.essences.push(e);
+    n++;
+  });
+  return n;
 }
 
 /* ---------- temps reel ---------- */
