@@ -222,8 +222,8 @@ button:active{transform:scale(.965)}
   background:rgba(11,20,22,.82);color:#fff;display:grid;place-items:center;font-size:12px}
 .lotadd{width:84px;height:84px;border-radius:15px;background:var(--anthracite-2);
   border:1.5px dashed var(--trait2);color:var(--brume-2);font-size:27px;display:grid;place-items:center}
-.iacand.hors{opacity:.5}
-.iacand.hors .cf{color:var(--brume-2)}
+.cand.hors{opacity:.5}
+.cand.hors .cf{color:var(--brume-2)}
 .phbox{position:relative;display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;
   border-radius:17px;background:var(--anthracite-2);border:1px dashed var(--trait2);margin-bottom:8px;
   min-height:74px;overflow:hidden;text-align:left}
@@ -3233,7 +3233,8 @@ function openEntry(){
   $('#e-pos').innerHTML=ligneposition();
   const pf=document.getElementById('pos-fix');if(pf)pf.onclick=corrigerPosition;
   $('#e-status').innerHTML='<div class="sprow" style="margin:0"><span style="flex:1"><span class="nm">'+
-    s.categorie_nom+'</span><span class="sci">'+s.latin+'</span></span><span class="st '+b.c+'">'+b.t+'</span></div>'+
+    (draft.kind==='a'?s.nom:s.categorie_nom)+'</span><span class="sci">'+s.latin+'</span></span>'+
+    (draft.kind==='a'?'':'<span class="st '+b.c+'">'+b.t+'</span>')+'</div>'+
     (s.verifier_localement?'<div class="note">Statut \u00e0 v\u00e9rifier aupr\u00e8s de l\u2019arr\u00eat\u00e9 pr\u00e9fectoral en vigueur.</div>':'');
   $$('#e-kind button').forEach(x=>x.classList.toggle('on',x.dataset.k===draft.kind));
   $('#e-note').value=draft.note||'';
@@ -4768,19 +4769,21 @@ async function identifierArbre(b64,apercu){
       (reste!=null?' \u00b7 '+reste+' identifications restantes aujourd\u2019hui':'')+
       '</div></div>'+
       cands.map(function(c){
-        const nom=c.code?SP[c.code].nom:c.latin;
-        return '<button class="iacand'+(c.hors?' hors':'')+'"'+
-          (c.code?' data-ia="'+c.code+'"':' disabled')+'>'+
-          '<span class="ct"><b>'+esc(nom)+'</b><span>'+esc(c.indices)+
-          (c.hors?' \u00b7 absente du catalogue':'')+'</span></span>'+
-          '<span class="cf">'+Math.round(c.confiance*100)+'\u2009%</span></button>';
+        const sp=c.code?SP[c.code]:null;
+        const nom=sp?sp.nom:c.latin;
+        /* le nom commun de Pl@ntNet repete souvent le notre : on montre
+           alors le latin, qui apporte quelque chose */
+        const sous=(!sp) ? 'absente du catalogue'
+          : (c.indices && c.indices.toLowerCase()!==sp.nom.toLowerCase())
+            ? c.latin+' \u00b7 '+c.indices : c.latin;
+        return '<button class="cand'+(c.hors?' hors':'')+'"'+
+          (c.code?' data-cand="'+c.code+'"':' disabled')+'>'+
+          '<span class="cf">'+Math.round(c.confiance*100)+'%</span>'+
+          '<span class="cn"><b>'+esc(nom)+'</b><span>'+esc(sous)+'</span></span>'+
+          '</button>';
       }).join('')+
       '<div class="note">Pl@ntNet identifie l\u2019esp\u00e8ce botanique. '+
       'La circonf\u00e9rence reste \u00e0 mesurer : elle seule donne l\u2019\u00e2ge.</div></div>';
-    $('#sp-ia').onclick=function(e){
-      const b=e.target.closest('[data-ia]'); if(!b)return;
-      choisirCandidat(b.dataset.ia);
-    };
   }catch(err){ echecIA(apercu,err.message||'Pl@ntNet injoignable',false) }
 }
 function echecIA(apercu,msg,cle){
@@ -4790,12 +4793,23 @@ function echecIA(apercu,msg,cle){
       '<span>Relais ou cl\u00e9 directe</span></span></button>':'')+
     '<button class="link" id="ia-clear" style="padding:10px 4px 2px">Effacer</button></div>';
 }
+/* Un seul gestionnaire pour toute la zone : propositions, vues du lot,
+   effacement. Plusieurs onclick concurrents s'ecrasaient l'un l'autre. */
 $('#sp-ia').onclick=function(e){
-  if(e.target.closest('#ia-clear')){$('#sp-ia').innerHTML='';return}
+  if(e.target.closest('#ia-clear')){$('#sp-ia').innerHTML='';lotPhotos=[];return}
   if(e.target.closest('#ia-cle')){ouvrirReglagesIA();return}
+  const x=e.target.closest('[data-lotx]');
+  if(x){lotPhotos.splice(+x.dataset.lotx,1);renderLot();return}
+  if(e.target.closest('[data-lotadd]')){lancerPhoto('#sp-file');return}
+  if(e.target.closest('[data-lotgo]')){lancerIdentificationLot();return}
   const b=e.target.closest('[data-cand]');
-  if(b){draft.sp=b.dataset.cand;draft.comp={};draft.eff=0;
-    $('#sp-ia').innerHTML='';closeSheet('#sh-species');openEntry()}
+  if(b){
+    draft.sp=b.dataset.cand;
+    if(draft.kind==='a'){ draft.comp={ind:1}; draft.eff=1 }
+    else { draft.comp={}; draft.eff=0 }
+    lotPhotos=[];
+    $('#sp-ia').innerHTML='';closeSheet('#sh-species');openEntry();
+  }
 };
 function lancerPhoto(source){
   if(!pretIA()){closeSheet('#sh-species');setTimeout(ouvrirReglagesIA,240);return}
@@ -4847,13 +4861,6 @@ function renderLot(){
     '<button class="big primary" data-lotgo="1" style="height:48px;margin-top:12px;width:100%">'+
       'Identifier'+(lotPhotos.length>1?' \u2014 '+lotPhotos.length+' vues':'')+'</button>'+
     '</div>';
-  z.onclick=function(e){
-    const x=e.target.closest('[data-lotx]');
-    if(x){lotPhotos.splice(+x.dataset.lotx,1);renderLot();return}
-    if(e.target.closest('[data-lotadd]')){lancerPhoto('#sp-file');return}
-    if(e.target.closest('[data-lotgo]')){lancerIdentificationLot();return}
-    const b=e.target.closest('[data-ia]'); if(b)choisirCandidat(b.dataset.ia);
-  };
 }
 async function lancerIdentificationLot(){
   if(!lotPhotos.length)return;
