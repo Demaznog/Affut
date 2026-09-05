@@ -215,6 +215,8 @@ button:active{transform:scale(.965)}
 .agebox .jauge i{display:block;height:100%;background:var(--grad)}
 .agebox .pct{font-family:var(--mono);font-size:10.5px;color:var(--brume-2);margin-top:6px}
 .lotvues{display:flex;gap:9px;flex-wrap:wrap}
+.lotcase{display:flex;flex-direction:column;align-items:center;gap:5px;width:84px}
+.lotleg{font-size:10.5px;color:var(--brume-2);text-align:center;line-height:1.25}
 .lotv{position:relative;width:84px;height:84px;border-radius:15px;overflow:hidden;
   border:1.5px solid var(--foret-clair)}
 .lotv img{width:100%;height:100%;object-fit:cover;display:block}
@@ -847,7 +849,7 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   <div style="padding:0 14px 10px;display:flex;gap:8px">
     <button class="big primary" id="sp-photo" style="height:50px;font-size:11.5px">
       <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.9"><path d="M3 8h3l1.5-2h9L18 8h3v12H3z"/><circle cx="12" cy="13" r="3.6"/></svg>
-      Photographier</button>
+      <span id="sp-photo-t">Photographier</span></button>
     <button class="big ghost" id="sp-galerie" style="height:50px;font-size:11.5px;flex:1">
       <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.9"><path d="M3 5h18v14H3z"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="9" r="1.4"/></svg>
       Galerie</button>
@@ -1064,7 +1066,8 @@ function ageArbre(code,circ,milieu){
      de donner une precision qu'on n'a pas */
   const e=(d.sur===false)?.40:.25;
   return {centre:Math.round(c), bas:arrondi(c*(1-e)), haut:arrondi(c*(1+e)),
-          longevite:d.longevite, part:Math.round(c/d.longevite*100), large:(d.sur===false)};
+          longevite:d.longevite, part:Math.round(c/d.longevite*100),
+          large:(d.sur===false&&!d.herite), herite:d.herite||null};
 }
 function diametre(circ){ return circ?Math.round(circ/Math.PI):null }
 
@@ -1262,6 +1265,9 @@ function heading(r){const s=SP[r.sp],n=totalOf(r);
   if(n>1)return n+' '+s.nom.toLowerCase()+'s';
   return s.nom}
 function statutBadge(s){
+  /* un arbre n'est ni chassable ni protege au sens cynegetique :
+     le badge n'aurait aucun sens sur une fiche dendrometrique */
+  if(s.categorie==='arbre')return{c:'',t:''};
   if(s.esod_groupe)return{c:'es',t:'ESOD G'+s.esod_groupe};
   if(s.statut_national==='chassable')return{c:'ch',t:'Chassable'};
   if(s.statut_national==='protegee')return{c:'pr',t:'Prot\u00e9g\u00e9e'};
@@ -2691,7 +2697,7 @@ function renderSpeciesList(){
       return '<button class="sprow" data-sp="'+s.code+'">'+
         '<span class="vig" data-vig="'+s.code+'">'+img+'</span>'+
         '<span style="flex:1;min-width:0"><span class="nm">'+s.nom+'</span><span class="sci">'+s.latin+'</span></span>'+
-        '<span class="st '+b.c+'">'+b.t+'</span></button>'}).join('')}).join('');
+        (b.t?'<span class="st '+b.c+'">'+b.t+'</span>':'')+'</button>'}).join('')}).join('');
   observerVignettes();
   $('#sp-list').innerHTML=html||'<div class="empty">Aucune esp\u00e8ce ne correspond.<br>Essayez sans filtre d\u2019\u00e9tiquette.</div>';
   const total=especesAdmises().length, arb=(draft&&draft.kind==='a');
@@ -2712,9 +2718,19 @@ $('#sp-quoi').onclick=function(e){
   const b=e.target.closest('[data-q]'); if(!b)return;
   const arb=(b.dataset.q==='arbre');
   if(draft){ draft.kind = arb ? 'a' : (draft.kind==='a'?'o':draft.kind); }
-  lotPhotos=[]; const z=$('#sp-ia'); if(z)z.innerHTML='';
+  lotPhotos=[]; const z=$('#sp-ia'); if(z)z.innerHTML=''; syncBoutonPhoto();
   syncQuoi(); renderTagbar(); renderSpeciesList();
 };
+/* Sur un arbre, deux vues sont attendues dans un ordre precis. Le bouton
+   dit laquelle vient maintenant : sans cela on photographie a l'aveugle. */
+function syncBoutonPhoto(){
+  const t=$('#sp-photo-t'); if(!t)return;
+  if(!draft||draft.kind!=='a'){ t.textContent='Photographier'; return }
+  const n=lotPhotos.length;
+  t.textContent = n===0 ? 'Photographier l\u2019arbre entier'
+                : n===1 ? 'Photographier la feuille'
+                : 'Reprendre une vue';
+}
 function syncQuoi(){
   const arb=(draft&&draft.kind==='a');
   $$('#sp-quoi button').forEach(x=>x.classList.toggle('on',
@@ -2804,7 +2820,7 @@ $('#lb-close').onclick=function(){$('#lightbox').classList.remove('on');$('#lb-i
 $('#lightbox').onclick=function(e){if(e.target.id==='lightbox')$('#lb-close').click()};
 function openPicker(){
   setTimeout(syncQuoi,0);
-  lotPhotos=[];
+  lotPhotos=[]; setTimeout(syncBoutonPhoto,0);
   $('#sp-q').value=PICK.q;renderTagbar();renderSpeciesList();
   $('#sp-back').style.display=(draft&&draft.sp)?'grid':'none';
   openSheet('#sh-species');
@@ -3112,14 +3128,25 @@ DB.especes.filter(e=>e.categorie==='arbre').forEach(function(e){
   const b=(e.latin||'').split(/\s+/).slice(0,2).join(' ').toLowerCase();
   if(b&&!LATIN[b])LATIN[b]=e.code;
 });
+/* entrees generiques du catalogue : « Populus sp. », « Salix sp. » */
+const GENRE_SEUL={};
+DB.especes.filter(e=>e.categorie==='arbre'&&/\bsp\.?$/i.test(e.latin||''))
+  .forEach(function(e){ GENRE_SEUL[(e.latin||'').split(/\s+/)[0].toLowerCase()]=e.code });
+
 function codeDepuisLatin(nom){
-  const b=(nom||'').split(/\s+/).slice(0,2).join(' ').toLowerCase();
-  if(LATIN[b])return LATIN[b];
-  /* a defaut d'espece, le genre suffit souvent : un Populus inconnu
-     vaut mieux qu'aucune proposition */
-  const genre=(nom||'').split(/\s+/)[0].toLowerCase();
-  for(const k in LATIN){ if(k.split(' ')[0]===genre)return LATIN[k] }
-  return null;
+  const mots=(nom||'').split(/\s+/).filter(Boolean);
+  const b=mots.slice(0,2).join(' ').toLowerCase();
+  if(LATIN[b])return {code:LATIN[b],sur:true};
+  const genre=(mots[0]||'').toLowerCase();
+  /* Le repli par genre n'est legitime que si notre entree est elle-meme
+     generique. Sinon on ferait passer un laurier-cerise pour un merisier :
+     meme genre, arbre tout autre. Mieux vaut ne rien proposer. */
+  if(GENRE_SEUL[genre])return {code:GENRE_SEUL[genre],sur:true};
+  /* hybride horticole : « Populus x canadensis » releve bien du genre */
+  if(mots.length>2&&/^[x\u00d7]$/i.test(mots[1])){
+    for(const k in LATIN){ if(k.split(' ')[0]===genre)return {code:LATIN[k],sur:false} }
+  }
+  return {code:null,sur:false};
 }
 async function identifierFlore(images){
   if(!RELAIS){ toast('Renseignez l\u2019adresse du relais'); return null }
@@ -3130,16 +3157,100 @@ async function identifierFlore(images){
   if(!r.ok||!j)throw new Error((j&&j.erreur)||'Pl@ntNet injoignable');
   return j;
 }
+let derniereFlore=null;
+function noteFlore(c){
+  if(!c)return '';
+  const p=[];
+  p.push(c.latin+(c.auteur?' '+c.auteur:''));
+  if(c.famille)p.push('famille '+c.famille);
+  const autres=(c.communs||[]).filter(function(n,i){
+    return i>0 && n.toLowerCase()!==(c.indices||'').toLowerCase(); });
+  if(autres.length)p.push('aussi appel\u00e9 '+autres.slice(0,2).join(', '));
+  p.push('Pl@ntNet '+Math.round((c.confiance||0)*100)+' %');
+  return 'Identification : '+p.join(' \u00b7 ')+'.';
+}
 function candidatsFlore(j){
   const out=[];
   (j.results||[]).forEach(function(x){
     const latin=(x.species&&x.species.scientificNameWithoutAuthor)||'';
-    const code=codeDepuisLatin(latin);
+    const r=codeDepuisLatin(latin);
     const communs=(x.species&&x.species.commonNames)||[];
-    out.push({code:code, latin:latin, confiance:x.score||0,
-      indices:(communs[0]||latin), hors:!code});
+    out.push({code:r.code, latin:latin, confiance:x.score||0,
+      indices:(communs[0]||latin), hors:!r.code, approche:(r.code&&!r.sur),
+      famille:(x.species&&x.species.family&&x.species.family.scientificNameWithoutAuthor)||null,
+      auteur:(x.species&&x.species.scientificNameAuthorship)||null,
+      communs:communs});
   });
   return out.slice(0,3);
+}
+
+/* ---------------------------------------------------------------
+   ESSENCES AJOUTEES DEPUIS PL@NTNET
+   Le catalogue embarque 113 essences ; le vivant en compte davantage.
+   Une espece reconnue par Pl@ntNet et retenue par l'utilisateur entre
+   au catalogue, avec un accroissement herite du genre quand il existe.
+   Ce coefficient est une approximation assumee : la fiche le dit.
+--------------------------------------------------------------- */
+const FAM_RESINEUX=['Pinaceae','Cupressaceae','Taxaceae','Araucariaceae',
+                    'Sciadopityaceae','Podocarpaceae','Cephalotaxaceae','Ginkgoaceae'];
+/* valeurs de repli, larges a dessein */
+const DEFAUT_FEUILLU={futaie:1.8,libre:2.5,longevite:200};
+const DEFAUT_RESINEUX={futaie:2.2,libre:2.8,longevite:300};
+
+function dendroHeritee(latin,famille){
+  const genre=(latin||'').split(/\s+/)[0].toLowerCase();
+  /* moyenne des essences du meme genre deja au catalogue : un Sorbus
+     inconnu grossit comme les autres Sorbus, a peu de chose pres */
+  const freres=DB.especes.filter(e=>e.categorie==='arbre'&&e.dendro&&
+    (e.latin||'').split(/\s+/)[0].toLowerCase()===genre);
+  if(freres.length){
+    const moy=k=>freres.reduce((a,e)=>a+e.dendro[k],0)/freres.length;
+    return {futaie:+moy('futaie').toFixed(2),libre:+moy('libre').toFixed(2),
+            longevite:Math.round(moy('longevite')),sur:false,herite:'genre'};
+  }
+  const res=FAM_RESINEUX.indexOf(famille)>-1;
+  const d=res?DEFAUT_RESINEUX:DEFAUT_FEUILLU;
+  return {futaie:d.futaie,libre:d.libre,longevite:d.longevite,sur:false,
+          herite:res?'resineux':'feuillu'};
+}
+function codeLibre(latin){
+  /* AX + trois lettres du genre + trois de l'espece */
+  const m=(latin||'').split(/\s+/);
+  const base='AX'+((m[0]||'').slice(0,3)+(m[1]||'').slice(0,3)).toUpperCase()
+    .replace(/[^A-Z]/g,'');
+  let c=base,n=2;
+  while(SP[c]){c=base+n;n++}
+  return c;
+}
+function poserNoteFlore(latin){
+  if(!derniereFlore||!latin)return;
+  const b=(latin||'').split(/\s+/).slice(0,2).join(' ').toLowerCase();
+  const c=derniereFlore.find(function(x){
+    return (x.latin||'').split(/\s+/).slice(0,2).join(' ').toLowerCase()===b; });
+  const t=noteFlore(c);
+  if(!t)return;
+  /* on n'ecrase jamais ce que l'utilisateur a ecrit */
+  draft.note=draft.note ? (draft.note.indexOf('Identification :')>-1 ? draft.note
+    : draft.note+'\n'+t) : t;
+}
+function ajouterEssence(latin,nomCommun,famille){
+  const ex=codeDepuisLatin(latin);
+  if(ex.code&&ex.sur)return ex.code;
+  const d=dendroHeritee(latin,famille);
+  const code=codeLibre(latin);
+  const e={code:code,nom:nomCommun||latin,latin:latin,
+    categorie:'arbre',categorie_nom:'Arbres remarquables',
+    taxon:'arbre',classes:'arbre',statut_national:'non_chassable',
+    esod_groupe:null,collectif:null,peser:false,predateur:false,
+    invasive:false,verifier_localement:false,
+    tags:['Arbres remarquables','Arbre','Non chassable','Ajout\u00e9e'],
+    dendro:d, ajoutee:true, famille:famille||null};
+  DB.especes.push(e); SP[code]=e;
+  const b=(latin||'').split(/\s+/).slice(0,2).join(' ').toLowerCase();
+  if(b)LATIN[b]=code;
+  ST.essences=ST.essences||[]; ST.essences.push(e);
+  save();
+  return code;
 }
 
 /* ---------- saisie d'un arbre ---------- */
@@ -3175,6 +3286,9 @@ function blocAge(r){
       :'pr\u00e9cisez le milieu pour affiner')+
     (tetard?'<br>Tronc renfl\u00e9 par les tailles : l\u2019\u00e2ge est probablement sous-estim\u00e9.':'')+
     (a.large?'<br>Essence peu document\u00e9e : fourchette volontairement large.':'')+
+    (a.herite?'<br>Accroissement d\u00e9duit '+
+      (a.herite==='genre'?'des autres esp\u00e8ces du genre':'d\u2019une moyenne')+
+      ' : \u00e2ge \u00e0 prendre avec prudence.':'')+
     '</div>'+
     '<div class="jauge"><i style="width:'+Math.min(100,a.part)+'%"></i></div>'+
     '<div class="pct">'+Math.min(100,a.part)+'\u2009% de la long\u00e9vit\u00e9 courante de l\u2019essence, '+
@@ -3353,7 +3467,8 @@ function openDetail(id){
         '<div class="stp"><span class="v mono" style="width:44px">'+e[1]+'</span></div></div>'}).join('');
   $('#d-body').innerHTML=
     '<div class="lab">Esp\u00e8ce</div><div class="sprow" style="margin:0"><span style="flex:1"><span class="nm">'+
-      s.nom+'</span><span class="sci">'+s.latin+'</span></span><span class="st '+b.c+'">'+b.t+'</span></div>'+
+      s.nom+'</span><span class="sci">'+s.latin+'</span></span>'+
+      (b.t?'<span class="st '+b.c+'">'+b.t+'</span>':'')+'</div>'+
     '<div class="lab">\u00c9tiquettes</div><div class="tagbar" style="padding:0;flex-wrap:wrap">'+
       s.tags.map(t=>'<span class="tg">'+t+'</span>').join('')+'</div>'+
     (bt?'<div class="lab">Battue</div><div style="font-size:15px">'+esc(bt.nom)+' \u2014 '+fmtDate(new Date(bt.date))+'</div>':'')+
@@ -4432,6 +4547,13 @@ function syncPastille(){
   const data=st?{terr:st.terr||[],battues:st.battues||[],recs:st.recs||[],aT:st.aT}
                :{terr:[],battues:[],recs:[],aT:'ALL'};
   ST.equipe=(st&&st.equipe)||null; ST.sync=(st&&st.sync)||null;
+  ST.essences=(st&&Array.isArray(st.essences))?st.essences:[];
+  ST.essences.forEach(function(e){
+    if(SP[e.code])return;
+    DB.especes.push(e); SP[e.code]=e;
+    const b=(e.latin||'').split(/\s+/).slice(0,2).join(' ').toLowerCase();
+    if(b&&!LATIN[b])LATIN[b]=e.code;
+  });
   ST.son=(st&&typeof st.son==='boolean')?st.son:true;
   const efface=purgerDemo(data);
   ST.terr=data.terr;ST.battues=data.battues;ST.recs=data.recs;
@@ -4733,7 +4855,7 @@ async function identifier(b64,apercu){
       return '<button class="cand" data-cand="'+c.code+'">'+
         '<span class="cf">'+Math.round((c.confiance||0)*100)+'%</span>'+
         '<span class="cn"><b>'+sp.nom+'</b><span>'+esc(c.indices||sp.latin)+'</span></span>'+
-        '<span class="st '+b.c+'">'+b.t+'</span></button>'}).join('')+
+        (b.t?'<span class="st '+b.c+'">'+b.t+'</span>':'')+'</button>'}).join('')+
     '<button class="link" id="ia-clear" style="padding:10px 4px 2px">Effacer la proposition</button></div>';
 }
 /* Ce que l'IA a lu du contexte se pre-remplit, sans jamais ecraser une
@@ -4762,7 +4884,9 @@ async function identifierArbre(b64,apercu){
   try{
     const j=await identifierFlore(images);
     const cands=candidatsFlore(j);
+    derniereFlore=cands;
     if(!cands.length){echecIA(apercu,'Aucune esp\u00e8ce reconnue sur cette photo.',false);return}
+    const aucunConnu=cands.every(c=>!c.code);
     const reste=(typeof j.remainingIdentificationRequests==='number')
       ? j.remainingIdentificationRequests : null;
     $('#sp-ia').innerHTML='<div class="iabox"><div class="iahead">'+
@@ -4774,17 +4898,26 @@ async function identifierArbre(b64,apercu){
         const nom=sp?sp.nom:c.latin;
         /* le nom commun de Pl@ntNet repete souvent le notre : on montre
            alors le latin, qui apporte quelque chose */
-        const sous=(!sp) ? 'absente du catalogue'
+        const sous=(!sp) ? ((c.indices&&c.indices!==c.latin)?c.indices+' ':'')+
+            '\u2014 \u00e0 ajouter au catalogue'
+          : c.approche ? c.latin+' \u2014 rattach\u00e9 au genre'
           : (c.indices && c.indices.toLowerCase()!==sp.nom.toLowerCase())
             ? c.latin+' \u00b7 '+c.indices : c.latin;
         return '<button class="cand'+(c.hors?' hors':'')+'"'+
-          (c.code?' data-cand="'+c.code+'"':' disabled')+'>'+
+          (c.code?' data-cand="'+c.code+'"'
+                 :' data-add="'+esc(c.latin)+'" data-nom="'+esc(c.indices||c.latin)+
+                  '" data-fam="'+esc(c.famille||'')+'"')+'>'+
           '<span class="cf">'+Math.round(c.confiance*100)+'%</span>'+
           '<span class="cn"><b>'+esc(nom)+'</b><span>'+esc(sous)+'</span></span>'+
           '</button>';
       }).join('')+
-      '<div class="note">Pl@ntNet identifie l\u2019esp\u00e8ce botanique. '+
-      'La circonf\u00e9rence reste \u00e0 mesurer : elle seule donne l\u2019\u00e2ge.</div></div>';
+      '<div class="note">'+(aucunConnu
+        ? 'Ces esp\u00e8ces ne figurent pas encore au catalogue. En choisir une l\u2019y '+
+          'ajoute : son accroissement sera d\u00e9duit du genre, donc l\u2019\u00e2ge restera '+
+          'approximatif jusqu\u2019\u00e0 ce qu\u2019on affine la valeur.'
+        : 'Pl@ntNet identifie l\u2019esp\u00e8ce botanique. '+
+          'La circonf\u00e9rence reste \u00e0 mesurer : elle seule donne l\u2019\u00e2ge.')+
+      '</div></div>';
   }catch(err){ echecIA(apercu,err.message||'Pl@ntNet injoignable',false) }
 }
 function echecIA(apercu,msg,cle){
@@ -4800,13 +4933,27 @@ $('#sp-ia').onclick=function(e){
   if(e.target.closest('#ia-clear')){$('#sp-ia').innerHTML='';lotPhotos=[];return}
   if(e.target.closest('#ia-cle')){ouvrirReglagesIA();return}
   const x=e.target.closest('[data-lotx]');
-  if(x){lotPhotos.splice(+x.dataset.lotx,1);renderLot();return}
+  if(x){lotPhotos.splice(+x.dataset.lotx,1);renderLot();syncBoutonPhoto();return}
   if(e.target.closest('[data-lotadd]')){lancerPhoto('#sp-file');return}
   if(e.target.closest('[data-lotgo]')){lancerIdentificationLot();return}
+  /* Ce que Pl@ntNet sait de l'espece enrichit la note : nom d'auteur,
+     famille, autres noms communs. Ce sont des reperes utiles pour
+     verifier plus tard une determination douteuse. */
+  const a=e.target.closest('[data-add]');
+  if(a){
+    const code=ajouterEssence(a.dataset.add,a.dataset.nom,a.dataset.fam||null);
+    draft.sp=code; draft.comp={ind:1}; draft.eff=1;
+    poserNoteFlore(a.dataset.add);
+    lotPhotos=[];
+    $('#sp-ia').innerHTML='';closeSheet('#sh-species');openEntry();
+    toast(SP[code].nom+' ajout\u00e9 au catalogue');
+    return;
+  }
   const b=e.target.closest('[data-cand]');
   if(b){
     draft.sp=b.dataset.cand;
-    if(draft.kind==='a'){ draft.comp={ind:1}; draft.eff=1 }
+    if(draft.kind==='a'){ draft.comp={ind:1}; draft.eff=1;
+      poserNoteFlore(SP[b.dataset.cand]&&SP[b.dataset.cand].latin) }
     else { draft.comp={}; draft.eff=0 }
     lotPhotos=[];
     $('#sp-ia').innerHTML='';closeSheet('#sh-species');openEntry();
@@ -4838,20 +4985,26 @@ async function traiterPhoto(e){
   }catch(err){toast('Photo illisible \u2014 essayez en JPEG')}
 }
 function ajouterAuLot(img){
+  /* le libelle du bouton suit l'etape */
   /* deux vues au plus : au-dela, Pl@ntNet n'y gagne rien et la plus
      ancienne cede la place */
   if(lotPhotos.length>=2)lotPhotos.shift();
   lotPhotos.push(img);
-  renderLot();
+  renderLot(); syncBoutonPhoto();
   if(lotPhotos.length===1)toast('Ajoutez la feuille ou l\u2019\u00e9corce, ou identifiez');
 }
 function renderLot(){
   const z=$('#sp-ia'); if(!z)return;
   if(!lotPhotos.length){z.innerHTML='';return}
+  const LEG=['L\u2019arbre entier','Feuille ou \u00e9corce'];
   z.innerHTML='<div class="iabox"><div class="lotvues">'+
-    lotPhotos.map((p,i)=>'<div class="lotv"><img src="'+p.url+'" alt="">'+
-      '<span class="lotx" data-lotx="'+i+'">\u2715</span></div>').join('')+
-    (lotPhotos.length<2?'<button class="lotadd" data-lotadd="1">+</button>':'')+
+    lotPhotos.map((p,i)=>'<div class="lotcase"><div class="lotv"><img src="'+p.url+'" alt="">'+
+      '<span class="lotx" data-lotx="'+i+'">\u2715</span></div>'+
+      '<span class="lotleg">'+LEG[i]+'</span></div>').join('')+
+    (lotPhotos.length<2
+      ? '<div class="lotcase"><button class="lotadd" data-lotadd="1">+</button>'+
+        '<span class="lotleg">'+LEG[lotPhotos.length]+'</span></div>'
+      : '')+
     '</div>'+
     '<div class="note" style="margin:10px 0 0">'+
       (lotPhotos.length<2
