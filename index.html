@@ -525,7 +525,7 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
       <div id="alerte"></div>
       <div id="accueil">
         <b>Aucune observation</b>
-        <span>Appuyez sur « Noter un animal » : votre position est prise automatiquement.<br><br>
+        <span>Appuyez sur « Noter une observation » : votre position est prise automatiquement.<br><br>
         Les territoires viennent ensuite — ils servent à regrouper vos fiches, pas à les autoriser.</span>
       </div>
       <div id="topbar">
@@ -579,7 +579,7 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   <div id="actionbar">
     <button class="big primary" id="act-main">
       <svg width="19" height="19" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-      <span id="act-main-t">Noter un animal</span></button>
+      <span id="act-main-t">Noter une observation</span></button>
     <button class="big ghost" id="act-map"><svg width="20" height="20" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11Z"/><circle cx="12" cy="10" r="2.4"/></svg></button>
     <button class="big ghost" id="act-alt" style="display:none">Point</button>
     <button class="big ghost" id="act-cancel" style="display:none">Annuler</button>
@@ -1929,12 +1929,12 @@ function syncActionBar(){
       '<i style="background:'+ETYPES[k].col+'"></i>'+ETYPES[k].n+'</button>').join('');
     $('#act-main').className='big primary';
     $('#act-main svg').style.display='';
-    $('#act-main-t').textContent='Noter un animal';
+    $('#act-main-t').textContent='Noter une observation';
   }else{
     $('#typebar').classList.remove('on');
     $('#act-main').className='big primary';
     $('#act-main svg').style.display='';
-    $('#act-main-t').textContent='Noter un animal';
+    $('#act-main-t').textContent='Noter une observation';
   }
 }
 $('#typebar').onclick=function(e){
