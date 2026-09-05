@@ -215,6 +215,13 @@ button:active{transform:scale(.965)}
 .agebox .jauge i{display:block;height:100%;background:var(--grad)}
 .agebox .pct{font-family:var(--mono);font-size:10.5px;color:var(--brume-2);margin-top:6px}
 .lotvues{display:flex;gap:9px;flex-wrap:wrap}
+.aide{width:19px;height:19px;border-radius:50%;background:var(--anthracite-3);
+  border:1px solid var(--trait2);color:var(--brume-2);font-size:11px;font-weight:700;
+  display:inline-grid;place-items:center;vertical-align:1px;margin-left:5px}
+.repi{padding:14px 0;border-bottom:1px solid var(--trait)}
+.repi:last-child{border-bottom:0}
+.repi b{display:block;font-size:15px;font-weight:600;margin-bottom:5px}
+.repi span{display:block;font-size:13.5px;line-height:1.55;color:var(--brume-2)}
 .mesl{display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:14px;
   background:var(--anthracite-2);border:1px solid var(--trait);margin-bottom:6px}
 .mesl .md{flex:1;min-width:0;font-size:13px;color:var(--brume-2)}
@@ -733,6 +740,16 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   <div class="sfoot"><button class="big primary" data-close="1">Fermer</button></div>
 </div>
 
+<div class="sheet" id="sh-reperes">
+  <div class="grab"></div>
+  <div class="shead"><div style="flex:1"><h2 id="rep-titre">Repères</h2></div>
+    <button class="link" data-close="1">Fermer</button></div>
+  <div class="sbody">
+    <div class="note" id="rep-intro" style="margin-top:0">—</div>
+    <div id="rep-corps"></div>
+  </div>
+</div>
+
 <div class="sheet short" id="sh-dup">
   <div class="grab"></div>
   <div class="shead"><div style="flex:1"><h2>Reprendre cette battue</h2>
@@ -958,9 +975,9 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
 
       <div id="e-age"></div>
 
-      <div class="lab">Milieu de croissance</div>
+      <div class="lab">Milieu de croissance <button class="aide" data-rep="milieu">?</button></div>
       <div class="chipgrid" id="e-milieu"></div>
-      <div class="lab">Port</div>
+      <div class="lab">Port <button class="aide" data-rep="port">?</button></div>
       <div class="chipgrid" id="e-port"></div>
       <div class="lab">Hauteur estimée (m)</div>
       <input type="number" id="e-haut" inputmode="numeric" placeholder="ex. 24">
@@ -969,7 +986,7 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
       <div class="lab">Comptage de cernes <span style="color:var(--brume-2);
         text-transform:none;letter-spacing:0">— si l'occasion se présente</span></div>
       <div id="e-cernes"></div>
-      <div class="lab">Marqueurs de vieillissement</div>
+      <div class="lab">Marqueurs de vieillissement <button class="aide" data-rep="marq">?</button></div>
       <div id="e-marq"></div>
       <div class="note">Ce sont ces marqueurs, plus que l'âge, qui font la valeur
         écologique d'un arbre : cavités, bois mort et écorce décollée abritent
@@ -1064,6 +1081,50 @@ const PORTS=[{"k":"franc","n":"Franc-pied","d":"tronc unique, croissance normale
 const MILIEUX=[{"k":"futaie","n":"Futaie serrée","d":"concurrence forte, houppier étroit","f":0.0},{"k":"claire","n":"Futaie claire","d":"concurrence modérée","f":0.35},{"k":"lisiere","n":"Lisière ou haie","d":"lumière d'un côté","f":0.65},{"k":"isole","n":"Isolé, parc, pré","d":"pleine lumière tout autour","f":1.0}];
 const MARQUEURS=[{"k":"cavite","n":"Cavité","d":"trou de pic, chandelle creuse"},{"k":"dendro","n":"Dendrotelme","d":"cavité retenant l'eau"},{"k":"bois_mort","n":"Bois mort dans le houppier","d":"branches sèches sur pied"},{"k":"ecorce","n":"Écorce déplaquée","d":"plaques décollées, abri à chiroptères"},{"k":"champ","n":"Champignon lignivore","d":"polypore, amadouvier"},{"k":"fente","n":"Fente ou blessure","d":"éclat de foudre, plaie ouverte"},{"k":"seve","n":"Coulée de sève","d":"suintement sur le tronc"},{"k":"lierre","n":"Lierre développé","d":"couverture importante"},{"k":"gui","n":"Gui","d":"touffes dans le houppier"},{"k":"nid","n":"Nid ou aire occupée","d":"rapace, corvidé, cigogne"}];
 const estArbre=c=>!!(SP[c]&&SP[c].categorie==='arbre');
+
+/* Reperes de terrain. Les intitules seuls ne suffisent pas : « tetard »
+   ou « dendrotelme » ne parlent qu'a qui les connait deja. */
+const REPERES={
+ port:{titre:'Port de l\u2019arbre',
+   intro:'Le port dit comment l\u2019arbre a pouss\u00e9 \u2014 et surtout o\u00f9 mesurer.',
+   items:[
+    ['Franc-pied','Tronc unique montant d\u2019un seul jet depuis le sol, issu de graine ou de plantation. C\u2019est le cas ordinaire : mesurez \u00e0 1,30 m sans pr\u00e9caution particuli\u00e8re.'],
+    ['T\u00eatard','Arbre \u00e9t\u00eat\u00e9 \u00e0 hauteur d\u2019homme puis taill\u00e9 tous les huit \u00e0 quinze ans pendant des d\u00e9cennies. Le tronc se renfle en t\u00eate de chat d\u2019o\u00f9 partent les rejets. Fr\u00e9quent sur saule, fr\u00eane et ch\u00eane de bocage. Le renflement gonfle la circonf\u00e9rence : mesurez sous la t\u00eate, et sachez que l\u2019\u00e2ge sera sous-estim\u00e9.'],
+    ['C\u00e9p\u00e9e','Plusieurs brins partant d\u2019une m\u00eame souche, g\u00e9n\u00e9ralement apr\u00e8s recepage. Courant sur ch\u00e2taignier, charme, noisetier. Mesurez le brin le plus gros, jamais l\u2019ensemble : la souche est plus vieille que ses brins.'],
+    ['Greff\u00e9','Bourrelet visible au collet ou plus haut, l\u00e0 o\u00f9 le greffon a \u00e9t\u00e9 pos\u00e9. Surtout sur fruitiers. Mesurez au-dessus du bourrelet : la partie basse appartient au porte-greffe, d\u2019une autre vari\u00e9t\u00e9 et parfois d\u2019un autre \u00e2ge.']
+   ]},
+ milieu:{titre:'Milieu de croissance',
+   intro:'C\u2019est le facteur le plus lourd du calcul : un arbre isol\u00e9 grossit pr\u00e8s de deux fois plus vite qu\u2019un arbre serr\u00e9. Regardez la lumi\u00e8re, pas le paysage.',
+   items:[
+    ['Futaie serr\u00e9e','Houppiers jointifs, tronc \u00e9lanc\u00e9 et cylindrique, branches basses mortes ou tomb\u00e9es. La concurrence pousse l\u2019arbre \u00e0 monter plut\u00f4t qu\u2019\u00e0 grossir : accroissement minimal.'],
+    ['Futaie claire','Arbres espac\u00e9s, houppiers qui se fr\u00f4lent sans se recouvrir. Situation interm\u00e9diaire, la plus fr\u00e9quente en for\u00eat trait\u00e9e.'],
+    ['Lisi\u00e8re ou haie','Lumi\u00e8re d\u2019un seul c\u00f4t\u00e9 : le houppier est dissym\u00e9trique, largement d\u00e9velopp\u00e9 vers le vide et r\u00e9duit vers le peuplement.'],
+    ['Isol\u00e9, parc, pr\u00e9','Pleine lumi\u00e8re tout autour. Houppier large et bas, branches basses vivantes, tronc court et conique. Accroissement maximal : un ch\u00eane peut prendre 2,5 cm de tour par an contre 1,4 en futaie.']
+   ]},
+ marq:{titre:'Marqueurs de vieillissement',
+   intro:'Ce sont eux qui font la valeur \u00e9cologique d\u2019un arbre, davantage que sa taille. Un arbre creux de 2 m de tour h\u00e9berge plus de vie qu\u2019un arbre sain de 4 m.',
+   items:[
+    ['Cavit\u00e9','Trou de pic, chandelle creuse, fente qui s\u2019est ouverte. Abri pour chiropt\u00e8res, chouettes, sittelles et des centaines d\u2019insectes. Une cavit\u00e9 met un si\u00e8cle \u00e0 se former : elle ne se remplace pas.'],
+    ['Dendrotelme','Cavit\u00e9 qui retient l\u2019eau de pluie, souvent \u00e0 une fourche. Micro-habitat rare, avec une faune qui ne vit que l\u00e0 \u2014 certaines mouches et col\u00e9opt\u00e8res n\u2019existent nulle part ailleurs.'],
+    ['Bois mort dans le houppier','Branches s\u00e8ches rest\u00e9es sur pied. Ce n\u2019est pas un signe de mort prochaine : c\u2019est le garde-manger des insectes saproxyliques et des pics.'],
+    ['\u00c9corce d\u00e9plaqu\u00e9e','Plaques d\u00e9coll\u00e9es mais encore tenantes. L\u2019interstice sert de g\u00eete d\u2019\u00e9t\u00e9 aux chauves-souris arboricoles, notamment la barbastelle.'],
+    ['Champignon lignivore','Polypore, amadouvier, fistuline. Signale une d\u00e9composition interne d\u00e9j\u00e0 avanc\u00e9e. L\u2019arbre peut vivre encore des d\u00e9cennies ainsi.'],
+    ['Fente ou blessure','\u00c9clat de foudre, plaie d\u2019\u00e9lagage, g\u00e9livure. Porte d\u2019entr\u00e9e des champignons, donc pr\u00e9lude aux cavit\u00e9s.'],
+    ['Coul\u00e9e de s\u00e8ve','Suintement sombre sur le tronc, souvent li\u00e9 \u00e0 une blessure ou \u00e0 une bact\u00e9riose. Attire de nombreux insectes.'],
+    ['Lierre d\u00e9velopp\u00e9','Le lierre n\u2019\u00e9touffe pas l\u2019arbre \u2014 il ne le parasite pas. Il abrite oiseaux et insectes, mais emp\u00eache d\u2019examiner le tronc et de mesurer.'],
+    ['Gui','H\u00e9miparasite : il pr\u00e9l\u00e8ve l\u2019eau et les sels de l\u2019arbre. Quelques touffes sont sans cons\u00e9quence, une forte densit\u00e9 affaiblit r\u00e9ellement.'],
+    ['Nid ou aire occup\u00e9e','Aire de rapace, nid de corvid\u00e9 ou de cigogne. Un arbre porteur d\u2019aire m\u00e9rite une attention particuli\u00e8re, surtout en p\u00e9riode de reproduction.']
+   ]}
+};
+function ouvrirReperes(k){
+  const R=REPERES[k]; if(!R)return;
+  $('#rep-titre').textContent=R.titre;
+  $('#rep-intro').textContent=R.intro;
+  $('#rep-corps').innerHTML=R.items.map(function(x){
+    return '<div class="repi"><b>'+x[0]+'</b><span>'+x[1]+'</span></div>';
+  }).join('');
+  openSheet('#sh-reperes');
+}
 
 /* ---------------------------------------------------------------
    MESURES REPETEES
@@ -3478,6 +3539,10 @@ $('#circ-val').oninput=function(e){
   $('#circ-unite').textContent=draft.circ?('centim\u00e8tres \u00b7 diam\u00e8tre '+diametre(draft.circ)+' cm'):'centim\u00e8tres';
   $('#e-save').disabled=!(draft.sp&&draft.circ>=10);
 };
+document.addEventListener('click',function(e){
+  const b=e.target.closest('[data-rep]');
+  if(b){ e.preventDefault(); ouvrirReperes(b.dataset.rep) }
+},true);
 $('#e-milieu').onclick=function(e){const b=e.target.closest('[data-mi]');if(!b)return;
   draft.milieu=b.dataset.mi;renderArbre()};
 $('#e-port').onclick=function(e){const b=e.target.closest('[data-po]');if(!b)return;
