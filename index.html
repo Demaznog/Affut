@@ -1005,8 +1005,8 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   <div class="grab"></div>
   <div class="shead"><div style="flex:1"><h2 id="d-title">Fiche</h2><div class="sub mono" id="d-meta">—</div></div></div>
   <div class="sbody"><div id="d-body"></div></div>
-  <div class="sfoot"><button class="big ghost" id="d-del" style="flex:0 0 118px;color:#D9705F">Supprimer</button>
-    <button class="big primary" data-close="1">Fermer</button></div>
+  <div class="sfoot"><button class="big ghost" id="d-del" style="flex:0 0 108px;color:#D9705F">Supprimer</button>
+    <button class="big primary" id="d-edit">Modifier</button></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -2648,7 +2648,9 @@ function openSheet(id){
   $('#scrim').classList.add('on');$(id).classList.add('on');
 }
 function closeSheet(id){$(id).classList.remove('on');if(!$$('.sheet.on').length)$('#scrim').classList.remove('on')}
-function closeAll(){$('#scrim').classList.remove('on');$$('.sheet').forEach(s=>s.classList.remove('on'))}
+function closeAll(){
+  if(editFiche){editFiche=null;
+    const bs=document.getElementById('e-save'); if(bs)bs.textContent='Enregistrer';}$('#scrim').classList.remove('on');$$('.sheet').forEach(s=>s.classList.remove('on'))}
 $('#scrim').onclick=closeAll;
 $$('[data-close]').forEach(b=>b.onclick=closeAll);
 $('#cf-no').onclick=function(){cfYes=cfAlt=null;closeAll()};
@@ -2799,6 +2801,8 @@ function openPicker(){
 function startNew(lat,lng){ouvrirFiche(lat,lng,null,'carte')}
 function openNewFiche(lat,lng){ouvrirFiche(lat,lng,null,'carte')}
 function ouvrirFiche(lat,lng,acc,src){
+  editFiche=null;
+  const bs=document.getElementById('e-save'); if(bs)bs.textContent='Enregistrer';
   const d=new Date(),l=lune(d),so=soleil(d,lat,lng);
   draft={id:uid(),terr:territoireDe(lat,lng),battue:ST.aB||null,kind:ST.aB?'p':'o',sp:null,
     lat:lat,lng:lng,acc:acc,src:src||'carte',t:d.getTime(),comp:{},eff:0,note:'',weight:null,
@@ -3223,6 +3227,18 @@ function assurerVisible(r){
   }
   return causes.join(', ');
 }
+/* Une fiche s'amende : on revient mesurer un arbre, on corrige un
+   effectif, on precise une essence. La fiche d'origine est reprise
+   telle quelle dans le brouillon, puis replacee a son rang. */
+let editFiche=null;
+function modifierFiche(id){
+  const r=ST.recs.find(x=>x.id===id); if(!r)return;
+  editFiche=id;
+  draft=JSON.parse(JSON.stringify(r));
+  PLACE=null;
+  openEntry();
+  $('#e-save').textContent='Enregistrer les modifications';
+}
 $('#e-save').onclick=function(){
   draft.note=$('#e-note').value.trim();
   draft.weight=$('#e-weight').value?parseFloat($('#e-weight').value):null;
@@ -3230,7 +3246,12 @@ $('#e-save').onclick=function(){
   draft.terr=territoireDe(draft.lat,draft.lng);
   if(!draft.auteur_nom&&ST.equipe)draft.auteur_nom=ST.equipe.pseudo;
   const r=draft;
-  marquer(r);ST.recs.unshift(r);ST.recs.sort((a,b)=>b.t-a.t);
+  if(editFiche){
+    const i=ST.recs.findIndex(x=>x.id===editFiche);
+    if(i>-1){ r.id=editFiche; ST.recs[i]=r } else ST.recs.unshift(r);
+    editFiche=null;
+  }else ST.recs.unshift(r);
+  marquer(r);ST.recs.sort((a,b)=>b.t-a.t);
   const ajuste=assurerVisible(r);
   /* les images quittent le brouillon : elles passent en file d'attente,
      le stockage du navigateur ne pourrait pas les porter. */
@@ -3347,6 +3368,7 @@ function openDetail(id){
     setTimeout(function(){startPoint('deplacer',{rec:r.id,orig:[r.lat,r.lng]})},280);
   };
 }
+$('#d-edit').onclick=function(){ if(editing)modifierFiche(editing) };
 $('#d-del').onclick=function(){const v=ST.recs.find(r=>r.id===editing);
   if(v&&ST.equipe){marquer(v);v.del=true;synchroniser(true)}
   ST.recs=ST.recs.filter(r=>r.id!==editing);save();closeAll();
