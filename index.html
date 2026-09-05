@@ -214,6 +214,8 @@ button:active{transform:scale(.965)}
 .agebox .jauge{height:8px;border-radius:4px;background:var(--anthracite-2);margin-top:12px;overflow:hidden}
 .agebox .jauge i{display:block;height:100%;background:var(--grad)}
 .agebox .pct{font-family:var(--mono);font-size:10.5px;color:var(--brume-2);margin-top:6px}
+.iacand.hors{opacity:.5}
+.iacand.hors .cf{color:var(--brume-2)}
 .phbox{position:relative;display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;
   border-radius:17px;background:var(--anthracite-2);border:1px dashed var(--trait2);margin-bottom:8px;
   min-height:74px;overflow:hidden;text-align:left}
@@ -3085,6 +3087,50 @@ function syncPhotos(){
   }).join('');
 }
 
+/* ---------------------------------------------------------------
+   IDENTIFICATION DE LA FLORE — Pl@ntNet
+   Un modele generaliste confond une ecorce de chene et une de
+   chataignier. Pl@ntNet est entraine sur des millions d'observations
+   botaniques : sur une feuille, il n'y a pas de comparaison.
+   Les deux photos partent ensemble, l'une declaree comme port,
+   l'autre comme feuille — le moteur croise les deux.
+--------------------------------------------------------------- */
+/* nom latin -> code d'essence, sur le binome seul */
+const LATIN={};
+DB.especes.filter(e=>e.categorie==='arbre').forEach(function(e){
+  const b=(e.latin||'').split(/\s+/).slice(0,2).join(' ').toLowerCase();
+  if(b&&!LATIN[b])LATIN[b]=e.code;
+});
+function codeDepuisLatin(nom){
+  const b=(nom||'').split(/\s+/).slice(0,2).join(' ').toLowerCase();
+  if(LATIN[b])return LATIN[b];
+  /* a defaut d'espece, le genre suffit souvent : un Populus inconnu
+     vaut mieux qu'aucune proposition */
+  const genre=(nom||'').split(/\s+/)[0].toLowerCase();
+  for(const k in LATIN){ if(k.split(' ')[0]===genre)return LATIN[k] }
+  return null;
+}
+async function identifierFlore(images){
+  if(!RELAIS){ toast('Renseignez l\u2019adresse du relais'); return null }
+  const r=await fetch(RELAIS.replace(/\/+$/,'')+'/plantnet',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({images:images,projet:'all'})});
+  const j=await r.json().catch(()=>null);
+  if(!r.ok||!j)throw new Error((j&&j.erreur)||'Pl@ntNet injoignable');
+  return j;
+}
+function candidatsFlore(j){
+  const out=[];
+  (j.results||[]).forEach(function(x){
+    const latin=(x.species&&x.species.scientificNameWithoutAuthor)||'';
+    const code=codeDepuisLatin(latin);
+    const communs=(x.species&&x.species.commonNames)||[];
+    out.push({code:code, latin:latin, confiance:x.score||0,
+      indices:(communs[0]||latin), hors:!code});
+  });
+  return out.slice(0,3);
+}
+
 /* ---------- saisie d'un arbre ---------- */
 function renderArbre(){
   if(!draft)return;
@@ -4631,6 +4677,8 @@ function invite(){
 async function identifier(b64,apercu){
   $('#sp-ia').innerHTML='<div class="iabox"><div class="iahead">'+
     '<img src="'+apercu+'" alt=""><div class="t">Analyse de la photo en cours\u2026</div></div></div>';
+  /* les arbres passent par le moteur botanique */
+  if(draft&&draft.kind==='a')return identifierArbre(b64,apercu);
   let j=null;
   try{
     if(RELAIS){
@@ -4686,6 +4734,38 @@ function appliquerLectureArbre(j){
     const ok=j.marqueurs.filter(k=>MARQUEURS.some(m=>m.k===k));
     if(ok.length)draft.marq=ok;
   }
+}
+async function identifierArbre(b64,apercu){
+  /* on joint la photo d'ensemble si elle existe : le port aide autant
+     que la feuille, et Pl@ntNet accepte les deux d'un coup */
+  const ens=(draft.photos||[]).find(p=>p.role==='ensemble'&&p.b64);
+  const images=[{b64:b64,organe:(phRole==='ensemble'?'habit':'leaf')}];
+  if(ens&&phRole!=='ensemble')images.push({b64:ens.b64,organe:'habit'});
+  try{
+    const j=await identifierFlore(images);
+    const cands=candidatsFlore(j);
+    if(!cands.length){echecIA(apercu,'Aucune esp\u00e8ce reconnue sur cette photo.',false);return}
+    const reste=(typeof j.remainingIdentificationRequests==='number')
+      ? j.remainingIdentificationRequests : null;
+    $('#sp-ia').innerHTML='<div class="iabox"><div class="iahead">'+
+      '<img src="'+apercu+'" alt=""><div class="t">Pl@ntNet propose'+
+      (reste!=null?' \u00b7 '+reste+' identifications restantes aujourd\u2019hui':'')+
+      '</div></div>'+
+      cands.map(function(c){
+        const nom=c.code?SP[c.code].nom:c.latin;
+        return '<button class="iacand'+(c.hors?' hors':'')+'"'+
+          (c.code?' data-ia="'+c.code+'"':' disabled')+'>'+
+          '<span class="ct"><b>'+esc(nom)+'</b><span>'+esc(c.indices)+
+          (c.hors?' \u00b7 absente du catalogue':'')+'</span></span>'+
+          '<span class="cf">'+Math.round(c.confiance*100)+'\u2009%</span></button>';
+      }).join('')+
+      '<div class="note">Pl@ntNet identifie l\u2019esp\u00e8ce botanique. '+
+      'La circonf\u00e9rence reste \u00e0 mesurer : elle seule donne l\u2019\u00e2ge.</div></div>';
+    $('#sp-ia').onclick=function(e){
+      const b=e.target.closest('[data-ia]'); if(!b)return;
+      choisirCandidat(b.dataset.ia);
+    };
+  }catch(err){ echecIA(apercu,err.message||'Pl@ntNet injoignable',false) }
 }
 function echecIA(apercu,msg,cle){
   $('#sp-ia').innerHTML='<div class="iabox"><div class="iahead"><img src="'+apercu+'" alt="">'+
