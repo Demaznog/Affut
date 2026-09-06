@@ -215,6 +215,7 @@ button:active{transform:scale(.965)}
 .agebox .jauge i{display:block;height:100%;background:var(--grad)}
 .agebox .pct{font-family:var(--mono);font-size:10.5px;color:var(--brume-2);margin-top:6px}
 .lotvues{display:flex;gap:9px;flex-wrap:wrap}
+.mk.inter{background:#D98A2B;box-shadow:0 0 0 2px rgba(217,138,43,.35),0 3px 10px rgba(0,0,0,.5)}
 .aide{width:19px;height:19px;border-radius:50%;background:var(--anthracite-3);
   border:1px solid var(--trait2);color:var(--brume-2);font-size:11px;font-weight:700;
   display:inline-grid;place-items:center;vertical-align:1px;margin-left:5px}
@@ -981,6 +982,8 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
       <div class="chipgrid" id="e-port"></div>
       <div class="lab">Hauteur estimée (m)</div>
       <input type="number" id="e-haut" inputmode="numeric" placeholder="ex. 24">
+      <div class="lab">État de l'arbre</div>
+      <div id="e-suivi"></div>
       <div class="lab">Historique des mesures</div>
       <div id="e-mes"></div>
       <div class="lab">Comptage de cernes <span style="color:var(--brume-2);
@@ -1116,6 +1119,23 @@ const REPERES={
     ['Nid ou aire occup\u00e9e','Aire de rapace, nid de corvid\u00e9 ou de cigogne. Un arbre porteur d\u2019aire m\u00e9rite une attention particuli\u00e8re, surtout en p\u00e9riode de reproduction.']
    ]}
 };
+/* Un territoire se gere aussi : un arbre peut menacer un chemin, un
+   poste ou une ligne. On note l'etat et l'intervention envisagee.
+   Attention toutefois : un arbre creux n'est pas un arbre a abattre.
+   Sa valeur ecologique tient justement a ses defauts. */
+const ETATS=[
+  {k:'sain',    n:'Sain',        c:'#3E8C5A'},
+  {k:'deperit', n:'Dépérissant', c:'#C79A4E'},
+  {k:'dangereux',n:'Dangereux',  c:'#C15346'},
+  {k:'mort',    n:'Mort sur pied',c:'#8B6FB5'}
+];
+const ACTIONS=[
+  {k:'',        n:'Aucune',            d:'on laisse faire'},
+  {k:'surveil', n:'À surveiller',      d:'revoir dans un an'},
+  {k:'elaguer', n:'À élaguer',         d:'réduction, mise en sécurité'},
+  {k:'abattre', n:'À abattre',         d:'danger avéré'},
+  {k:'conserver',n:'À conserver',      d:'arbre-habitat, ne pas toucher'}
+];
 function ouvrirReperes(k){
   const R=REPERES[k]; if(!R)return;
   $('#rep-titre').textContent=R.titre;
@@ -1205,6 +1225,34 @@ const clsOf=c=>CLS[SP[c].classes];
 const ALLTAGS=(function(){const s=new Set();DB.especes.forEach(e=>e.tags.forEach(t=>s.add(t)));return Array.from(s).sort()})();
 const FTAGS=['Chassable','ESOD groupe 1','ESOD groupe 2','ESOD groupe 3','Esp\u00e8ce prot\u00e9g\u00e9e',
   'Grand gibier','Gibier d\u2019eau','Pr\u00e9dateur','Invasive','Oiseau','Mammif\u00e8re'].filter(t=>ALLTAGS.indexOf(t)>-1);
+
+/* Les etiquettes de la faune ne disent rien d'un arbre. Celles-ci
+   portent sur ce qui se pilote : la nature du bois et l'intervention. */
+const FTAGS_ARBRE=[
+  {t:'Feuillu',   f:r=>famille(r.sp)==='feuillu'},
+  {t:'R\u00e9sineux',  f:r=>famille(r.sp)==='resineux'},
+  {t:'\u00c0 abattre', f:r=>r.action==='abattre'},
+  {t:'\u00c0 \u00e9laguer', f:r=>r.action==='elaguer'},
+  {t:'\u00c0 surveiller',f:r=>r.action==='surveil'},
+  {t:'\u00c0 conserver', f:r=>r.action==='conserver'},
+  {t:'D\u00e9p\u00e9rissant',f:r=>r.etat==='deperit'},
+  {t:'Dangereux', f:r=>r.etat==='dangereux'},
+  {t:'Mort sur pied',f:r=>r.etat==='mort'},
+  {t:'Arbre-habitat',f:r=>(r.marq||[]).length>=2},
+  {t:'\u00c2ge mesur\u00e9',f:r=>!!(r.mes&&r.mes.length>1)},
+  {t:'Plus de 200 ans',f:function(r){
+      const mi=(MILIEUX.find(m=>m.k===r.milieu)||{}).f;
+      const a=ageArbre(r.sp,r.circ,mi,r.mes,r.cernes);
+      return !!(a&&!a.impossible&&a.centre>=200); }}
+];
+/* la barre suit la nature filtree : arbres seuls, faune seule, ou les deux */
+function tagsCourants(){
+  const k=FILTER.kinds;
+  const arb=k.has('a'), faune=(k.has('o')||k.has('p')||k.has('i'));
+  if(arb&&!faune)return FTAGS_ARBRE.map(x=>x.t);
+  if(faune&&!arb)return FTAGS;
+  return FTAGS.concat(FTAGS_ARBRE.map(x=>x.t));
+}
 
 /* ---------- outils ---------- */
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -1375,6 +1423,8 @@ function composition(r){
     const mi=MILIEUX.find(m=>m.k===r.milieu); if(mi)p.push(mi.n.toLowerCase());
     const po=PORTS.find(x=>x.k===r.port); if(po&&r.port!=='franc')p.push(po.n.toLowerCase());
     const nm=(r.marq||[]).length; if(nm)p.push(nm+' marqueur'+(nm>1?'s':''));
+    const A=ACTIONS.find(x=>x.k===r.action);
+    if(A&&A.k)p.push(A.n.toLowerCase());
     return p.join(', ');
   }
   const set=clsOf(r.sp);
@@ -1912,8 +1962,18 @@ function inPeriod(r){const d=new Date(r.t);
   if(FILTER.period==='week')return NOW-d<7*864e5;
   if(FILTER.period==='season')return seasonOf(d)===CURSEASON;
   return true}
-function hasTags(r){if(!FILTER.tags.size)return true;
-  const t=SP[r.sp].tags;for(const x of FILTER.tags)if(t.indexOf(x)>-1)return true;return false}
+function hasTags(r){
+  if(!FILTER.tags.size)return true;
+  const t=SP[r.sp].tags;
+  for(const x of FILTER.tags){
+    if(t.indexOf(x)>-1)return true;
+    if(r.kind==='a'){
+      const A=FTAGS_ARBRE.find(y=>y.t===x);
+      if(A&&A.f(r))return true;
+    }
+  }
+  return false;
+}
 function visible(){return recsOf(ST.aT).filter(r=>inPeriod(r)&&FILTER.kinds.has(r.kind)&&hasTags(r))}
 
 function renderTerr(){
@@ -1952,7 +2012,9 @@ function renderRecs(){
     const dedans=sil?(sil+(n>1?'<b class="cpt">'+n+'</b>':''))
                     :(r.sp+(n>1?'<small>\u00d7'+n+'</small>':''));
     const etiq=(SILHOUETTES&&map.getZoom()>=15)?'<span class="mklab">'+r.sp+'</span>':'';
-    const html='<div class="mk '+r.kind+(sil?' sil':'')+'" style="width:'+sz+'px;height:'+sz+'px">'+
+    const inter=(r.kind==='a'&&r.action&&r.action!=='conserver'&&r.action!=='surveil');
+    const html='<div class="mk '+r.kind+(inter?' inter':'')+(sil?' sil':'')+
+      '" style="width:'+sz+'px;height:'+sz+'px">'+
       dedans+'</div>'+etiq;
     L.marker([r.lat,r.lng],{icon:L.divIcon({className:'',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],html:html})})
       .addTo(layRec).on('click',function(){openDetail(r.id)})});
@@ -3298,7 +3360,7 @@ function noteFlore(c){
 }
 function candidatsFlore(j){
   const out=[];
-  (j.results||[]).forEach(function(x){
+  ((j&&j.results)||[]).forEach(function(x){
     const latin=(x.species&&x.species.scientificNameWithoutAuthor)||'';
     const r=codeDepuisLatin(latin);
     const communs=(x.species&&x.species.commonNames)||[];
@@ -3397,7 +3459,7 @@ function renderArbre(){
     '<span class="cas">\u2713</span></button>').join('');
   $('#e-haut').value=draft.haut||'';
   $('#e-age').innerHTML=blocAge(draft);
-  renderMesures(); renderCernes(); syncPhotos();
+  renderMesures(); renderCernes(); renderSuivi(); syncPhotos();
   $('#e-save').disabled=!(draft.sp&&c>=10);
 }
 /* ---------- historique et cernes ---------- */
@@ -3425,6 +3487,31 @@ function renderMesures(){
         '\u00e0 cinq ans, l\u2019\u00e9cart donnera la croissance r\u00e9elle de cet arbre.</div>'
       : '');
 }
+function renderSuivi(){
+  if(!draft)return;
+  const z=$('#e-suivi'); if(!z)return;
+  const e=draft.etat||null, a=draft.action||'';
+  z.innerHTML=
+    '<div class="chipgrid">'+ETATS.map(x=>'<button class="chip'+(e===x.k?' on':'')+
+      '" data-etat="'+x.k+'">'+x.n+'</button>').join('')+'</div>'+
+    '<div class="lab">Intervention envisagée</div>'+
+    '<div class="chipgrid">'+ACTIONS.filter(x=>x.k).map(x=>'<button class="chip'+(a===x.k?' on':'')+
+      '" data-act="'+x.k+'" style="grid-column:1/-1;text-align:left;padding:11px 14px">'+
+      '<b>'+x.n+'</b> <span style="opacity:.7;font-size:11.5px">\u00b7 '+x.d+'</span></button>').join('')+
+    '</div>'+
+    ((a==='abattre'&&(draft.marq||[]).length)
+      ? '<div class="mesgain" style="border-left-color:var(--ambre)">Cet arbre porte '+
+        (draft.marq||[]).length+' marqueur'+((draft.marq||[]).length>1?'s':'')+
+        ' de vieillissement. Avant de l\u2019abattre, voyez si une r\u00e9duction du houppier '+
+        'suffirait : les cavit\u00e9s et le bois mort mettent un si\u00e8cle \u00e0 se reformer.</div>'
+      : '');
+}
+$('#e-suivi').onclick=function(ev){
+  const b=ev.target.closest('[data-etat]');
+  if(b){ draft.etat=(draft.etat===b.dataset.etat)?null:b.dataset.etat; renderArbre(); return }
+  const a=ev.target.closest('[data-act]');
+  if(a){ draft.action=(draft.action===a.dataset.act)?'':a.dataset.act; renderArbre(); }
+};
 function renderCernes(){
   if(!draft)return;
   const z=$('#e-cernes'); if(!z)return;
@@ -3795,10 +3882,14 @@ const KINDS=[['o','Observations'],['p','Pr\u00e9l\u00e8vements'],['i','Indices']
 function buildFilter(){
   $('#f-per').innerHTML=PERIODS.map(p=>'<button class="chip" data-p="'+p[0]+'">'+p[1]+'</button>').join('');
   $('#f-kind').innerHTML=KINDS.map(k=>'<button class="chip" data-kk="'+k[0]+'">'+k[1]+'</button>').join('');
-  $('#f-tag').innerHTML=FTAGS.map(t=>'<button class="chip" data-t="'+t+'">'+t+'</button>').join('');
+  $('#f-tag').innerHTML=tagsCourants().map(t=>'<button class="chip" data-t="'+t+'">'+t+'</button>').join('');
   $('#f-per').onclick=e=>{const b=e.target.closest('[data-p]');if(!b)return;FILTER.period=b.dataset.p;syncFilter();renderAll()};
   $('#f-kind').onclick=e=>{const b=e.target.closest('[data-kk]');if(!b)return;const k=b.dataset.kk;
     FILTER.kinds.has(k)?FILTER.kinds.delete(k):FILTER.kinds.add(k);if(!FILTER.kinds.size)FILTER.kinds.add(k);
+    /* les etiquettes suivent : celles qui n'ont plus cours sont retirees */
+    const dispo=tagsCourants();
+    Array.from(FILTER.tags).forEach(function(x){if(dispo.indexOf(x)<0)FILTER.tags.delete(x)});
+    $('#f-tag').innerHTML=dispo.map(t=>'<button class="chip" data-t="'+t+'">'+t+'</button>').join('');
     syncFilter();renderAll()};
   $('#f-tag').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;const t=b.dataset.t;
     FILTER.tags.has(t)?FILTER.tags.delete(t):FILTER.tags.add(t);syncFilter();renderAll()};
@@ -4297,7 +4388,7 @@ function ficheVers(r){
     lat:r.lat, lng:r.lng, precision_m:r.acc||null, source:r.src||'gps',
     observe_le:new Date(r.t).toISOString(), poids_kg:r.weight||null, note:r.note||null,
     photos:(r.photos||[]).map(p=>({role:p.role,chemin:p.chemin||null})),
-    mes:r.mes||null, cernes:r.cernes||null,
+    mes:r.mes||null, cernes:r.cernes||null, etat:r.etat||null, action:r.action||null,
     circ:r.circ||null, haut:r.haut||null, milieu:r.milieu||null,
     port:r.port||null, marq:r.marq||null,
     lune:r.lune||null, lune_pct:r.lunep==null?null:r.lunep,
@@ -4321,6 +4412,7 @@ function ficheDepuis(l,ex){
     });
   }
   r.mes=l.mes||null; r.cernes=l.cernes||null;
+  r.etat=l.etat||null; r.action=l.action||null;
   r.circ=l.circ||null; r.haut=l.haut||null;
   r.milieu=l.milieu||null; r.port=l.port||null; r.marq=l.marq||null;
   r.lune=l.lune; r.lunep=l.lune_pct; r.lever=l.soleil_lever;
@@ -5139,6 +5231,7 @@ async function identifierArbre(b64,apercu){
   }
   try{
     const j=await identifierFlore(images);
+    if(!j)throw new Error('Adresse du relais non renseign\u00e9e');
     const cands=candidatsFlore(j);
     derniereFlore=cands;
     if(!cands.length){echecIA(apercu,'Aucune esp\u00e8ce reconnue sur cette photo.',false);return}
@@ -5272,8 +5365,12 @@ function renderLot(){
       'Identifier'+(lotPhotos.length>1?' \u2014 '+lotPhotos.length+' vues':'')+'</button>'+
     '</div>';
 }
+let identifEnCours=false;
 async function lancerIdentificationLot(){
-  if(!lotPhotos.length)return;
+  if(!lotPhotos.length||identifEnCours)return;
+  identifEnCours=true;
+  const b=document.querySelector('[data-lotgo]');
+  if(b){b.disabled=true;b.textContent='Analyse en cours\u2026'}
   /* les vues photographiees ici alimentent aussi la fiche : on ne
      redemande pas a l'utilisateur de refaire le meme geste */
   draft.photos=draft.photos||[];
@@ -5283,7 +5380,14 @@ async function lancerIdentificationLot(){
     draft.photos=draft.photos.filter(x=>x.role!==role);
     draft.photos.push({role:role,vignette:p.url,attente:true,b64:p.b64});
   });
-  await identifierArbre(lotPhotos[lotPhotos.length-1].b64, lotPhotos[0].url);
+  try{
+    await identifierArbre(lotPhotos[lotPhotos.length-1].b64, lotPhotos[0].url);
+  }finally{
+    identifEnCours=false;
+    const b2=document.querySelector('[data-lotgo]');
+    if(b2){b2.disabled=false;b2.textContent='Identifier'+
+      (lotPhotos.length>1?' \u2014 '+lotPhotos.length+' vues':'')}
+  }
 }
 $('#sp-file').onchange=traiterPhoto;
 $('#sp-file2').onchange=traiterPhoto;
