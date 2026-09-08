@@ -735,6 +735,22 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <button class="big primary" id="eq-ok">Continuer</button></div>
 </div>
 
+<div class="sheet short" id="sh-compte">
+  <div class="grab"></div>
+  <div class="shead"><div style="flex:1"><h2>Mon identité</h2>
+    <div class="sub">Pour vous retrouver sur tous vos appareils</div></div>
+    <button class="link" data-close="1">Fermer</button></div>
+  <div class="sbody">
+    <div class="note" id="cp-etat" style="margin-top:0">—</div>
+    <div class="lab">Adresse électronique</div>
+    <input type="email" id="cp-mail" placeholder="vous@exemple.fr" autocomplete="email"
+      inputmode="email" autocapitalize="off">
+    <div class="note">Vous recevrez un lien à ouvrir depuis ce téléphone. Aucun mot de passe :
+      le lien suffit, et la session dure plusieurs mois.</div>
+  </div>
+  <div class="sfoot"><button class="big primary" id="cp-ok">Recevoir le lien</button></div>
+</div>
+
 <div class="sheet" id="sh-membres">
   <div class="grab"></div>
   <div class="shead"><div style="flex:1"><h2>Membres et droits</h2>
@@ -4401,6 +4417,68 @@ async function sbInit(){
   return sb;
 }
 
+/* ---------------------------------------------------------------
+   IDENTITE PAR COURRIEL
+   L'identite anonyme vit dans le navigateur : un appareil de plus,
+   ou un stockage efface, et c'est un membre de plus dans la liste.
+   Un compte rattache a une adresse suit la personne, pas l'appareil.
+
+   La session anonyme est convertie plutot que remplacee : l'identifiant
+   reste le meme, donc les fiches gardent leur auteur.
+--------------------------------------------------------------- */
+function courrielValide(m){ return /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(m||'') }
+async function monCompte(){
+  if(!sb)return null;
+  const {data}=await sb.auth.getUser();
+  const u=data&&data.user;
+  if(!u)return null;
+  return {id:u.id, mail:u.email||null, anonyme:!u.email};
+}
+async function lierCourriel(mail){
+  if(!await sbInit())throw new Error('service injoignable');
+  const c=await monCompte();
+  /* compte anonyme deja en place : on le convertit, l'identifiant survit */
+  if(c&&c.anonyme){
+    const {error}=await sb.auth.updateUser({email:mail});
+    if(error)throw error;
+    return 'conversion';
+  }
+  const {error}=await sb.auth.signInWithOtp({email:mail,
+    options:{emailRedirectTo:location.origin+location.pathname}});
+  if(error)throw error;
+  return 'connexion';
+}
+async function ouvrirCompte(){
+  if(!await sbInit()){toast('Service injoignable');return}
+  const c=await monCompte();
+  $('#cp-etat').innerHTML = c&&!c.anonyme
+    ? '<b>'+esc(c.mail)+'</b><span>Vos droits vous suivent sur tous vos appareils.</span>'
+    : '<b>Identit\u00e9 li\u00e9e \u00e0 cet appareil</b><span>Effacer les donn\u00e9es du navigateur '+
+      'ou changer de t\u00e9l\u00e9phone cr\u00e9e un nouveau membre.</span>';
+  $('#cp-mail').value=(c&&c.mail)||'';
+  $('#cp-mail').disabled=!!(c&&!c.anonyme);
+  $('#cp-ok').style.display=(c&&!c.anonyme)?'none':'block';
+  openSheet('#sh-compte');
+}
+$('#cp-ok').onclick=async function(){
+  const m=$('#cp-mail').value.trim().toLowerCase();
+  if(!courrielValide(m)){toast('Adresse incompl\u00e8te');return}
+  $('#cp-ok').disabled=true; $('#cp-ok').textContent='Envoi\u2026';
+  try{
+    await lierCourriel(m);
+    $('#cp-etat').innerHTML='<b>Courriel envoy\u00e9 \u00e0 '+esc(m)+'</b>'+
+      '<span>Ouvrez-le depuis ce t\u00e9l\u00e9phone et suivez le lien. '+
+      'Regardez les ind\u00e9sirables si rien n\u2019arrive.</span>';
+    $('#cp-ok').style.display='none';
+  }catch(e){
+    toast(/already/i.test(e.message||'')
+      ? 'Cette adresse est d\u00e9j\u00e0 utilis\u00e9e par un autre membre'
+      : '\u00c9chec : '+(e.message||''));
+  }finally{
+    $('#cp-ok').disabled=false; $('#cp-ok').textContent='Recevoir le lien';
+  }
+};
+
 /* ---------- adhesion ---------- */
 async function sbCreerEquipe(nom,pseudo){
   if(!await sbInit())throw new Error('service injoignable');
@@ -4724,12 +4802,15 @@ function syncBoutons(){
     ? '<button class="chip" id="eq-sync">Synchroniser</button>'+
       '<button class="chip" id="eq-code-voir">Voir le code</button>'+
       '<button class="chip" id="eq-membres" style="grid-column:1/-1">Membres et droits</button>'+
+      '<button class="chip" id="eq-compte" style="grid-column:1/-1">Mon identit\u00e9</button>'+
       '<button class="chip" id="eq-quitter" style="grid-column:1/-1">Quitter l\u2019\u00e9quipe</button>'
-    : '<button class="chip" id="eq-ouvrir" style="grid-column:1/-1">Partager avec une \u00e9quipe</button>';
+    : '<button class="chip" id="eq-ouvrir" style="grid-column:1/-1">Partager avec une \u00e9quipe</button>'+
+      '<button class="chip" id="eq-compte" style="grid-column:1/-1">Mon identit\u00e9</button>';
   const o=$('#eq-ouvrir'); if(o)o.onclick=ouvrirEquipe;
   const s=$('#eq-sync');   if(s)s.onclick=function(){synchroniser(false)};
   const v=$('#eq-code-voir'); if(v)v.onclick=montrerCode;
   const mb=$('#eq-membres'); if(mb)mb.onclick=ouvrirMembres;
+  const cp=$('#eq-compte'); if(cp)cp.onclick=ouvrirCompte;
   const q=$('#eq-quitter'); if(q)q.onclick=function(){
     askConfirm('Quitter l\u2019\u00e9quipe',
       'Vos fiches restent sur cet appareil et sur le serveur. Vous ne recevrez plus '+
@@ -5043,6 +5124,15 @@ function syncPastille(){
   suivre();
   setTimeout(rattraperMeteo,2500);
   syncEtat(); syncBoutons();
+  /* Supabase depose la session dans l'adresse au retour du lien :
+     on nettoie pour ne pas la laisser trainer dans l'historique. */
+  if(/access_token=|type=magiclink|type=email/.test(location.hash||'')){
+    sbInit().then(async function(){
+      const c=await monCompte();
+      if(c&&c.mail)setTimeout(function(){toast('Identit\u00e9 confirm\u00e9e \u00b7 '+c.mail)},900);
+      try{history.replaceState(null,'',location.pathname)}catch(e){}
+    });
+  }
   if(ST.equipe){ sbInit().then(function(c){ if(c){synchroniser(true);abonner();
     chargerMembres();chargerMessages();
     setTimeout(function(){viderFilePhotos(true)},3000)} }); }
