@@ -228,6 +228,9 @@ button:active{transform:scale(.965)}
 .mbn{display:block;font-size:15px;font-weight:600;margin-bottom:8px}
 .mbrole{display:inline-block;font-size:12.5px;color:var(--brume-2);
   padding:6px 12px;border-radius:11px;background:var(--anthracite-2);border:1px solid var(--trait)}
+.mbrow.moi{background:var(--anthracite-3);border-radius:14px;padding:13px;margin:0 -6px}
+.mbmoi{font-size:11px;font-weight:600;color:var(--foret-clair);background:rgba(62,140,90,.16);
+  padding:3px 8px;border-radius:8px;vertical-align:2px}
 .mbdate{display:block;font-size:11px;color:var(--brume-2);font-weight:400;margin-top:2px}
 .mbdel{margin-top:8px;font-size:12px;color:var(--sang);padding:6px 0}
 .mbseg button{height:38px;font-size:12px;border-radius:12px}
@@ -279,6 +282,7 @@ button:active{transform:scale(.965)}
 .marq.on .cas{background:#fff;border-color:#fff;color:var(--foret)}
 .seg button.on.ind{background:var(--ardoise);border-color:#C7ACEC;color:#0F1815}
 .search,input[type=text],input[type=date],input[type=time],input[type=password],
+input[type=email],input[type=tel],input[type=search],
 input[type=number],textarea{width:100%;background:var(--anthracite-2);border:1.5px solid var(--trait);
   border-radius:17px;color:var(--brume);padding:15px 16px;font-size:16px;font-family:var(--sans);
   resize:none;transition:border-color .18s ease}
@@ -4457,7 +4461,7 @@ async function ouvrirCompte(){
       'ou changer de t\u00e9l\u00e9phone cr\u00e9e un nouveau membre.</span>';
   $('#cp-mail').value=(c&&c.mail)||'';
   $('#cp-mail').disabled=!!(c&&!c.anonyme);
-  $('#cp-ok').style.display=(c&&!c.anonyme)?'none':'block';
+  $('#cp-ok').style.display=(c&&!c.anonyme)?'none':'flex';
   openSheet('#sh-compte');
 }
 $('#cp-ok').onclick=async function(){
@@ -4731,12 +4735,24 @@ function syncEtat(etat){
 
 /* ---------- interface ---------- */
 let eqMode='creer';
+/* Le role est relu au serveur : il a pu changer depuis l'adhesion,
+   et le comparer par prenom ne vaut rien quand plusieurs entrees
+   portent le meme. On s'appuie sur l'identifiant du compte. */
+async function rafraichirRole(){
+  if(!sbPret())return null;
+  try{
+    const {data,error}=await sb.rpc('mon_role',{p_equipe:ST.equipe.id});
+    if(error||!data)return null;
+    const r=(data==='chasseur')?'contrib':data;
+    if(ST.equipe.role!==r){ ST.equipe.role=r; save(); syncEtat(); syncBoutons(); }
+    return r;
+  }catch(e){ return null }
+}
 async function chargerRoles(){
   if(!sbPret())return [];
+  await rafraichirRole();
   const {data,error}=await sb.from('membre').select('*').eq('equipe_id',ST.equipe.id);
   if(error)return [];
-  /* on rafraichit au passage notre propre role : il a pu changer */
-  const moi=(data||[]).find(m=>m.role&&m.nom===ST.equipe.pseudo);
   return data||[];
 }
 const LIB_ROLE={chef:'Responsable',contrib:'Contributeur',lecteur:'Lecture seule'};
@@ -4747,11 +4763,15 @@ async function ouvrirMembres(){
   openSheet('#sh-membres');
   const l=await chargerRoles();
   const chef=estChef();
+  /* on repere sa propre ligne par le compte, pas par le prenom */
+  let moi=null;
+  try{ const {data}=await sb.auth.getUser(); moi=data&&data.user&&data.user.id }catch(e){}
   $('#mb-liste').innerHTML=l.map(function(m){
     const r=m.role==='chasseur'?'contrib':m.role;
-    const moi=(m.nom===ST.equipe.pseudo);
+    const cestMoi=(moi&&m.user_id===moi);
     const depuis=m.rejoint_le?new Date(m.rejoint_le):null;
-    return '<div class="mbrow"><span class="mbn">'+esc(m.nom)+
+    return '<div class="mbrow'+(cestMoi?' moi':'')+'"><span class="mbn">'+esc(m.nom)+
+      (cestMoi?' <span class="mbmoi">cet appareil</span>':'')+
       (depuis?'<span class="mbdate">arriv\u00e9 le '+fmtDay(depuis)+'</span>':'')+'</span>'+
       (chef
         ? '<span class="seg mbseg">'+
@@ -4760,7 +4780,7 @@ async function ouvrirMembres(){
             (k==='lecteur'?'Lecture':k==='contrib'?'\u00c9criture':'Chef')+'</button>').join('')+
           '</span>'
         : '<span class="mbrole">'+(LIB_ROLE[r]||r)+'</span>')+
-      ((chef&&!moi)?'<button class="mbdel" data-del-user="'+m.user_id+'">Retirer</button>':'')+
+      ((chef&&!cestMoi)?'<button class="mbdel" data-del-user="'+m.user_id+'">Retirer</button>':'')+
       '</div>';
   }).join('')||'<div class="empty" style="padding:18px">Aucun membre.</div>';
   $('#mb-note').innerHTML=(chef
@@ -5133,7 +5153,7 @@ function syncPastille(){
       try{history.replaceState(null,'',location.pathname)}catch(e){}
     });
   }
-  if(ST.equipe){ sbInit().then(function(c){ if(c){synchroniser(true);abonner();
+  if(ST.equipe){ sbInit().then(function(c){ if(c){rafraichirRole();synchroniser(true);abonner();
     chargerMembres();chargerMessages();
     setTimeout(function(){viderFilePhotos(true)},3000)} }); }
 })();
