@@ -223,6 +223,11 @@ button:active{transform:scale(.965)}
 .repi:last-child{border-bottom:0}
 .repi b{display:block;font-size:15px;font-weight:600;margin-bottom:5px}
 .repi span{display:block;font-size:13.5px;line-height:1.55;color:var(--brume-2)}
+.mbrow{padding:13px 0;border-bottom:1px solid var(--trait)}
+.mbrow:last-child{border-bottom:0}
+.mbn{display:block;font-size:15px;font-weight:600;margin-bottom:8px}
+.mbr{font-size:12.5px;color:var(--brume-2)}
+.mbseg button{height:38px;font-size:12px;border-radius:12px}
 .mesl{display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:14px;
   background:var(--anthracite-2);border:1px solid var(--trait);margin-bottom:6px}
 .mesl .md{flex:1;min-width:0;font-size:13px;color:var(--brume-2)}
@@ -725,6 +730,17 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   </div>
   <div class="sfoot"><button class="big ghost" data-close="1">Annuler</button>
     <button class="big primary" id="eq-ok">Continuer</button></div>
+</div>
+
+<div class="sheet" id="sh-membres">
+  <div class="grab"></div>
+  <div class="shead"><div style="flex:1"><h2>Membres et droits</h2>
+    <div class="sub" id="mb-sous">—</div></div>
+    <button class="link" data-close="1">Fermer</button></div>
+  <div class="sbody">
+    <div id="mb-liste"></div>
+    <div class="note" id="mb-note">—</div>
+  </div>
 </div>
 
 <div class="sheet short" id="sh-code">
@@ -2246,6 +2262,7 @@ function proposerLieu(p){
   openSheet('#sh-ou');
 }
 $('#act-main').onclick=async function(){
+  if(!PLACE&&refusLecture())return;
   const c=map.getCenter();
   if(!PLACE){
     $('#act-main').disabled=true;$('#act-main-t').textContent='Position\u2026';
@@ -3738,6 +3755,7 @@ function modifierFiche(id){
   $('#e-save').textContent='Enregistrer les modifications';
 }
 $('#e-save').onclick=function(){
+  if(refusLecture())return;
   draft.note=$('#e-note').value.trim();
   draft.weight=$('#e-weight').value?parseFloat($('#e-weight').value):null;
   draft.battue=ST.aB||null;
@@ -3867,8 +3885,9 @@ function openDetail(id){
     setTimeout(function(){startPoint('deplacer',{rec:r.id,orig:[r.lat,r.lng]})},280);
   };
 }
-$('#d-edit').onclick=function(){ if(editing)modifierFiche(editing) };
-$('#d-del').onclick=function(){const v=ST.recs.find(r=>r.id===editing);
+$('#d-edit').onclick=function(){ if(refusLecture())return; if(editing)modifierFiche(editing) };
+$('#d-del').onclick=function(){
+  if(refusLecture())return;const v=ST.recs.find(r=>r.id===editing);
   if(v&&ST.equipe){marquer(v);v.del=true;synchroniser(true)}
   ST.recs=ST.recs.filter(r=>r.id!==editing);save();closeAll();
   syncTopbar();renderAll();toast('Fiche supprim\u00e9e')};
@@ -4347,6 +4366,15 @@ const uuid4=()=> (crypto&&crypto.randomUUID)?crypto.randomUUID()
 function marquer(o){ if(o){o.maj=Date.now(); if(!o.sid)o.sid=uuid4();} return o }
 
 function sbPret(){ return !!(sb && ST.equipe && ST.equipe.id) }
+/* Un lecteur consulte tout mais n'ecrit rien. Le verrou reel est en
+   base : ce qui suit ne fait qu'eviter des gestes voues a l'echec. */
+function estLecteur(){ return !!(ST.equipe && ST.equipe.role==='lecteur') }
+function estChef(){ return !!(ST.equipe && ST.equipe.role==='chef') }
+function refusLecture(){
+  if(!estLecteur())return false;
+  toast('Vous \u00eates en lecture seule sur cette \u00e9quipe');
+  return true;
+}
 
 async function sbCharger(){
   if(window.supabase&&window.supabase.createClient)return true;
@@ -4376,7 +4404,7 @@ async function sbCreerEquipe(nom,pseudo){
   const {data,error}=await sb.rpc('creer_equipe',{p_nom:nom,p_pseudo:pseudo});
   if(error)throw error;
   const l=Array.isArray(data)?data[0]:data;
-  ST.equipe={id:l.equipe_id,nom:nom,code:l.code,pseudo:pseudo};
+  ST.equipe={id:l.equipe_id,nom:nom,code:l.code,pseudo:pseudo,role:'chef'};
   ST.sync={depuis:null};
   await save(); return ST.equipe;
 }
@@ -4385,7 +4413,8 @@ async function sbRejoindre(code,pseudo){
   const {data,error}=await sb.rpc('rejoindre_equipe',{p_code:code,p_pseudo:pseudo});
   if(error)throw error;
   const l=Array.isArray(data)?data[0]:data;
-  ST.equipe={id:l.equipe_id,nom:l.equipe_nom,code:code.toUpperCase().trim(),pseudo:pseudo};
+  ST.equipe={id:l.equipe_id,nom:l.equipe_nom,code:code.toUpperCase().trim(),
+    pseudo:pseudo,role:l.role||'lecteur'};
   ST.sync={depuis:null};
   await save(); return ST.equipe;
 }
@@ -4609,25 +4638,74 @@ function syncEtat(etat){
   const el=$('#eq-etat'); if(!el)return;
   if(!ST.equipe){ el.innerHTML='<b>Application solo</b><span>Vos donn\u00e9es restent sur cet appareil</span>'; return }
   const n=ST.recs.filter(r=>r.maj).length+ST.terr.filter(t=>t.maj).length+ST.battues.filter(b=>b.maj).length;
+  const R={chef:'responsable',contrib:'contributeur',lecteur:'lecture seule'};
+  const rol=R[ST.equipe.role]||'contributeur';
   const detail= etat==='en cours' ? 'Synchronisation en cours\u2026'
     : etat==='erreur' ? 'Derni\u00e8re tentative en \u00e9chec'
     : n ? (n+' modification'+(n>1?'s':'')+' \u00e0 envoyer')
     : '\u00c0 jour';
-  el.innerHTML='<b>'+esc(ST.equipe.nom)+' \u00b7 '+esc(ST.equipe.pseudo)+'</b><span>'+detail+'</span>';
+  el.innerHTML='<b>'+esc(ST.equipe.nom)+' \u00b7 '+esc(ST.equipe.pseudo)+
+    ' \u00b7 '+rol+'</b><span>'+detail+'</span>';
 }
 
 /* ---------- interface ---------- */
 let eqMode='creer';
+async function chargerRoles(){
+  if(!sbPret())return [];
+  const {data,error}=await sb.from('membre').select('*').eq('equipe_id',ST.equipe.id);
+  if(error)return [];
+  /* on rafraichit au passage notre propre role : il a pu changer */
+  const moi=(data||[]).find(m=>m.role&&m.nom===ST.equipe.pseudo);
+  return data||[];
+}
+const LIB_ROLE={chef:'Responsable',contrib:'Contributeur',lecteur:'Lecture seule'};
+async function ouvrirMembres(){
+  if(!sbPret())return;
+  $('#mb-sous').textContent=ST.equipe.nom;
+  $('#mb-liste').innerHTML='<div class="empty" style="padding:18px">Chargement\u2026</div>';
+  openSheet('#sh-membres');
+  const l=await chargerRoles();
+  const chef=estChef();
+  $('#mb-liste').innerHTML=l.map(function(m){
+    const r=m.role==='chasseur'?'contrib':m.role;
+    return '<div class="mbrow"><span class="mbn">'+esc(m.nom)+'</span>'+
+      (chef
+        ? '<span class="seg mbseg">'+
+          ['lecteur','contrib','chef'].map(k=>'<button class="'+(r===k?'on':'')+
+            '" data-role="'+k+'" data-user="'+m.user_id+'">'+
+            (k==='lecteur'?'Lecture':k==='contrib'?'\u00c9criture':'Chef')+'</button>').join('')+
+          '</span>'
+        : '<span class="mbr">'+(LIB_ROLE[r]||r)+'</span>')+
+      '</div>';
+  }).join('')||'<div class="empty" style="padding:18px">Aucun membre.</div>';
+  $('#mb-note').textContent=chef
+    ? 'Un nouvel arrivant est en lecture seule : c\u2019est \u00e0 vous de l\u2019habiliter. '+
+      'Un contributeur peut noter, modifier et supprimer des fiches, et utiliser '+
+      'l\u2019identification par photo.'
+    : 'Seul le responsable de l\u2019\u00e9quipe peut modifier les droits.';
+}
+$('#mb-liste').onclick=async function(e){
+  const b=e.target.closest('[data-role]'); if(!b)return;
+  try{
+    const {error}=await sb.rpc('definir_role',{p_equipe:ST.equipe.id,
+      p_membre:b.dataset.user,p_role:b.dataset.role});
+    if(error)throw error;
+    toast('Droits modifi\u00e9s');
+    ouvrirMembres();
+  }catch(err){ toast('Refus\u00e9 : '+(err.message||'')) }
+};
 function syncBoutons(){
   const b=$('#eq-boutons'); if(!b)return;
   b.innerHTML= ST.equipe
     ? '<button class="chip" id="eq-sync">Synchroniser</button>'+
       '<button class="chip" id="eq-code-voir">Voir le code</button>'+
+      '<button class="chip" id="eq-membres" style="grid-column:1/-1">Membres et droits</button>'+
       '<button class="chip" id="eq-quitter" style="grid-column:1/-1">Quitter l\u2019\u00e9quipe</button>'
     : '<button class="chip" id="eq-ouvrir" style="grid-column:1/-1">Partager avec une \u00e9quipe</button>';
   const o=$('#eq-ouvrir'); if(o)o.onclick=ouvrirEquipe;
   const s=$('#eq-sync');   if(s)s.onclick=function(){synchroniser(false)};
   const v=$('#eq-code-voir'); if(v)v.onclick=montrerCode;
+  const mb=$('#eq-membres'); if(mb)mb.onclick=ouvrirMembres;
   const q=$('#eq-quitter'); if(q)q.onclick=function(){
     askConfirm('Quitter l\u2019\u00e9quipe',
       'Vos fiches restent sur cet appareil et sur le serveur. Vous ne recevrez plus '+
