@@ -226,7 +226,10 @@ button:active{transform:scale(.965)}
 .mbrow{padding:13px 0;border-bottom:1px solid var(--trait)}
 .mbrow:last-child{border-bottom:0}
 .mbn{display:block;font-size:15px;font-weight:600;margin-bottom:8px}
-.mbr{font-size:12.5px;color:var(--brume-2)}
+.mbrole{display:inline-block;font-size:12.5px;color:var(--brume-2);
+  padding:6px 12px;border-radius:11px;background:var(--anthracite-2);border:1px solid var(--trait)}
+.mbdate{display:block;font-size:11px;color:var(--brume-2);font-weight:400;margin-top:2px}
+.mbdel{margin-top:8px;font-size:12px;color:var(--sang);padding:6px 0}
 .mbseg button{height:38px;font-size:12px;border-radius:12px}
 .mesl{display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:14px;
   background:var(--anthracite-2);border:1px solid var(--trait);margin-bottom:6px}
@@ -4668,23 +4671,44 @@ async function ouvrirMembres(){
   const chef=estChef();
   $('#mb-liste').innerHTML=l.map(function(m){
     const r=m.role==='chasseur'?'contrib':m.role;
-    return '<div class="mbrow"><span class="mbn">'+esc(m.nom)+'</span>'+
+    const moi=(m.nom===ST.equipe.pseudo);
+    const depuis=m.rejoint_le?new Date(m.rejoint_le):null;
+    return '<div class="mbrow"><span class="mbn">'+esc(m.nom)+
+      (depuis?'<span class="mbdate">arriv\u00e9 le '+fmtDay(depuis)+'</span>':'')+'</span>'+
       (chef
         ? '<span class="seg mbseg">'+
           ['lecteur','contrib','chef'].map(k=>'<button class="'+(r===k?'on':'')+
             '" data-role="'+k+'" data-user="'+m.user_id+'">'+
             (k==='lecteur'?'Lecture':k==='contrib'?'\u00c9criture':'Chef')+'</button>').join('')+
           '</span>'
-        : '<span class="mbr">'+(LIB_ROLE[r]||r)+'</span>')+
+        : '<span class="mbrole">'+(LIB_ROLE[r]||r)+'</span>')+
+      ((chef&&!moi)?'<button class="mbdel" data-del-user="'+m.user_id+'">Retirer</button>':'')+
       '</div>';
   }).join('')||'<div class="empty" style="padding:18px">Aucun membre.</div>';
-  $('#mb-note').textContent=chef
+  $('#mb-note').innerHTML=(chef
     ? 'Un nouvel arrivant est en lecture seule : c\u2019est \u00e0 vous de l\u2019habiliter. '+
       'Un contributeur peut noter, modifier et supprimer des fiches, et utiliser '+
       'l\u2019identification par photo.'
-    : 'Seul le responsable de l\u2019\u00e9quipe peut modifier les droits.';
+    : 'Seul le responsable de l\u2019\u00e9quipe peut modifier les droits.')+
+    '<br><br>Un m\u00eame pr\u00e9nom peut appara\u00eetre plusieurs fois : chaque appareil '+
+    'compte pour une entr\u00e9e, et effacer les donn\u00e9es du navigateur en cr\u00e9e une '+
+    'nouvelle. Retirez celles qui ne servent plus.';
 }
 $('#mb-liste').onclick=async function(e){
+  const sup=e.target.closest('[data-del-user]');
+  if(sup){
+    askConfirm('Retirer ce membre',
+      'Il perdra l\u2019acc\u00e8s \u00e0 l\u2019\u00e9quipe. Ses fiches d\u00e9j\u00e0 enregistr\u00e9es '+
+      'restent en place, avec son nom.','Retirer',async function(){
+        try{
+          const {error}=await sb.rpc('retirer_membre',
+            {p_equipe:ST.equipe.id,p_membre:sup.dataset.delUser});
+          if(error)throw error;
+          toast('Membre retir\u00e9'); ouvrirMembres();
+        }catch(err){ toast('Refus\u00e9 : '+(err.message||'')) }
+      });
+    return;
+  }
   const b=e.target.closest('[data-role]'); if(!b)return;
   try{
     const {error}=await sb.rpc('definir_role',{p_equipe:ST.equipe.id,
