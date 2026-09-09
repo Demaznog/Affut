@@ -215,6 +215,12 @@ button:active{transform:scale(.965)}
 .agebox .jauge i{display:block;height:100%;background:var(--grad)}
 .agebox .pct{font-family:var(--mono);font-size:10.5px;color:var(--brume-2);margin-top:6px}
 .lotvues{display:flex;gap:9px;flex-wrap:wrap}
+/* Anneau vert autour des arbres en fructification : plus il est vif et
+   epais, plus la glandee est forte. Le remplissage reste celui de la
+   nature de fiche, on n'ajoute qu'une information. */
+.mk.gl1{box-shadow:0 0 0 2.5px #6E8F5E,0 3px 10px rgba(0,0,0,.5)}
+.mk.gl2{box-shadow:0 0 0 3px #57B87A,0 3px 10px rgba(0,0,0,.5)}
+.mk.gl3{box-shadow:0 0 0 4px #3FD97C,0 0 12px rgba(63,217,124,.55),0 3px 10px rgba(0,0,0,.5)}
 .mk.inter{background:#D98A2B;box-shadow:0 0 0 2px rgba(217,138,43,.35),0 3px 10px rgba(0,0,0,.5)}
 .aide{width:19px;height:19px;border-radius:50%;background:var(--anthracite-3);
   border:1px solid var(--trait2);color:var(--brume-2);font-size:11px;font-weight:700;
@@ -2174,7 +2180,16 @@ function renderRecs(){
     const etiq=(SILHOUETTES&&map.getZoom()>=15)
       ?'<span class="mklab">'+esc(etiquetteCarte(r))+'</span>':'';
     const inter=(r.kind==='a'&&r.action&&r.action!=='conserver'&&r.action!=='surveil');
-    const html='<div class="mk '+r.kind+(inter?' inter':'')+(sil?' sil':'')+
+    /* un arbre qui donne se repere d'un coup d'oeil : c'est lui qui
+       dira ou seront les betes cet automne */
+    let gl='';
+    if(r.kind==='a'&&fructifie(r.sp)){
+      const an=new Date().getFullYear();
+      const n=fructAnnee(r,an)||fructAnnee(r,an-1);
+      if(n==='forte')gl=' gl3'; else if(n==='moyenne')gl=' gl2';
+      else if(n==='faible')gl=' gl1';
+    }
+    const html='<div class="mk '+r.kind+(inter?' inter':'')+gl+(sil?' sil':'')+
       '" style="width:'+sz+'px;height:'+sz+'px">'+
       dedans+'</div>'+etiq;
     L.marker([r.lat,r.lng],{icon:L.divIcon({className:'',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],html:html})})
