@@ -611,6 +611,8 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
       <div class="lab">Poids moyens — grand gibier</div><div id="poids"></div>
       <div class="lab">Phase de lune</div><div id="lunes"></div>
       <div class="lab">Vent dominant</div><div id="vents"></div>
+      <div class="lab">Arbres et coupes</div><div id="arbres"></div>
+      <div class="lab">Glandée et fainée</div><div id="glandee"></div>
       <div class="lab">Comparaison des saisons</div><div id="seasons"></div>
       <div class="lab">Saison en cours à date équivalente</div><div id="cadence"></div>
       <div class="note" id="dbnote"></div>
@@ -1046,6 +1048,10 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
       <input type="number" id="e-haut" inputmode="numeric" placeholder="ex. 24">
       <div class="lab">État de l'arbre</div>
       <div id="e-suivi"></div>
+      <div id="e-fructbloc" style="display:none">
+        <div class="lab">Fructification de l'année</div>
+        <div id="e-fruct"></div>
+      </div>
       <div class="lab">Historique des mesures</div>
       <div id="e-mes"></div>
       <div class="lab">Comptage de cernes <span style="color:var(--brume-2);
@@ -1191,13 +1197,51 @@ const ETATS=[
   {k:'dangereux',n:'Dangereux',  c:'#C15346'},
   {k:'mort',    n:'Mort sur pied',c:'#8B6FB5'}
 ];
+/* Un arbre abattu ne s'efface pas : il change d'etat. Sa fiche garde
+   la mesure, la photo et l'age — c'est ce qui fera le bilan dans dix
+   ans, et ce qu'aucun carnet ne conserve. */
+const ACTIONS_FAITES=['abattu'];
 const ACTIONS=[
   {k:'',        n:'Aucune',            d:'on laisse faire'},
   {k:'surveil', n:'À surveiller',      d:'revoir dans un an'},
   {k:'elaguer', n:'À élaguer',         d:'réduction, mise en sécurité'},
   {k:'abattre', n:'À abattre',         d:'danger avéré'},
-  {k:'conserver',n:'À conserver',      d:'arbre-habitat, ne pas toucher'}
+  {k:'conserver',n:'À conserver',      d:'arbre-habitat, ne pas toucher'},
+  {k:'abattu',   n:'Abattu',            d:'coupe faite, la fiche reste'}
 ];
+/* ---------------------------------------------------------------
+   GLANDEE ET FAINEE
+   Les chenes et le hetre fructifient par a-coups : une bonne annee
+   tous les trois a cinq ans, et jamais partout ensemble. C'est elle
+   qui commande le deplacement du sanglier a l'automne. Noter la
+   fructification, c'est se donner les moyens de prevoir le gagnage.
+--------------------------------------------------------------- */
+const FRUCTIFIE=['AQUEP','AQUES','AQUEP2','AQUEI','AQUER','AQUEL','AQUEC','AQUET',
+                 'AHET','ACHT','ACOR','AALI','AALIB','ASOR','AMER','APOM','APOI',
+                 'ANOY','ANOYN','AMIC','AARB','AIF','AGEN'];
+const NIVEAUX=[
+  {k:'nulle',  n:'Nulle',   d:'aucun fruit',            v:0, c:'#5C6B63'},
+  {k:'faible', n:'Faible',  d:'quelques fruits épars',  v:1, c:'#8B8F5A'},
+  {k:'moyenne',n:'Moyenne', d:'fructification visible', v:2, c:'#C79A4E'},
+  {k:'forte',  n:'Forte',   d:'sol couvert de fruits',  v:3, c:'#D9702B'}
+];
+const fructifie=c=>FRUCTIFIE.indexOf(c)>-1;
+function fructAnnee(r,an){
+  const l=r.fruct||[];
+  const e=l.find(x=>x.an===an);
+  return e?e.niv:null;
+}
+/* Indice de fructification du territoire, de 0 a 3. C'est lui qu'on
+   comparera aux observations de sanglier. */
+function indiceGlandee(recs,an){
+  const l=recs.filter(r=>r.kind==='a'&&fructifie(r.sp)&&fructAnnee(r,an));
+  if(!l.length)return null;
+  const s=l.reduce(function(a,r){
+    const N=NIVEAUX.find(x=>x.k===fructAnnee(r,an));
+    return a+(N?N.v:0); },0);
+  return {moy:s/l.length, n:l.length,
+    fortes:l.filter(r=>fructAnnee(r,an)==='forte').length};
+}
 function ouvrirReperes(k){
   const R=REPERES[k]; if(!R)return;
   $('#rep-titre').textContent=R.titre;
@@ -1302,6 +1346,11 @@ const FTAGS_ARBRE=[
   {t:'Mort sur pied',f:r=>r.etat==='mort'},
   {t:'Arbre-habitat',f:r=>(r.marq||[]).length>=2},
   {t:'\u00c2ge mesur\u00e9',f:r=>!!(r.mes&&r.mes.length>1)},
+  {t:'Abattus',f:r=>r.action==='abattu'},
+  {t:'Bonne gland\u00e9e',f:function(r){
+      const an=new Date().getFullYear();
+      const n=fructAnnee(r,an)||fructAnnee(r,an-1);
+      return n==='forte'||n==='moyenne'; }},
   {t:'Plus de 200 ans',f:function(r){
       const mi=(MILIEUX.find(m=>m.k===r.milieu)||{}).f;
       const a=ageArbre(r.sp,r.circ,mi,r.mes,r.cernes);
@@ -2089,7 +2138,7 @@ function renderRecs(){
       FILTER={period:'all',kinds:new Set(['o','p','i','a']),tags:new Set()};
       syncFilter();renderAll();toast('Filtres remis \u00e0 z\u00e9ro')};
   }else av.classList.remove('on');
-  visible().forEach(function(r){
+  visible().filter(visibleCarte).forEach(function(r){
     const n=totalOf(r),sz=n>1?36:31;
     const sil=SILHOUETTES?silhouette(r.sp,Math.round(sz*.72)):null;
     const dedans=sil?(sil+(n>1?'<b class="cpt">'+n+'</b>':''))
@@ -2134,6 +2183,11 @@ function renderBat(){
         .addTo(layBat).on('click',function(){openElem(el.id)});
     }
   });
+}
+/* Un arbre abattu encombrerait la carte sans rien apporter au terrain :
+   il n'y est plus. Il reste consultable par le filtre et le bilan. */
+function visibleCarte(r){
+  return !(r.kind==='a' && r.action==='abattu' && !ST.voirAbattus);
 }
 function renderAllMap(){renderTerr();renderBat();renderRecs()}
 
@@ -3549,7 +3603,7 @@ function renderArbre(){
     '<span class="cas">\u2713</span></button>').join('');
   $('#e-haut').value=draft.haut||'';
   $('#e-age').innerHTML=blocAge(draft);
-  renderMesures(); renderCernes(); renderSuivi(); syncPhotos();
+  renderMesures(); renderCernes(); renderSuivi(); renderFruct(); syncPhotos();
   /* on note souvent l'arbre sans metre sur soi : la mesure viendra
      a la visite suivante, la fiche n'a pas a attendre */
   $('#e-save').disabled=!draft.sp;
@@ -3579,6 +3633,35 @@ function renderMesures(){
         '\u00e0 cinq ans, l\u2019\u00e9cart donnera la croissance r\u00e9elle de cet arbre.</div>'
       : '');
 }
+function renderFruct(){
+  if(!draft)return;
+  const z=$('#e-fruct'); if(!z)return;
+  const bloc=$('#e-fructbloc');
+  if(!fructifie(draft.sp)){ if(bloc)bloc.style.display='none'; return }
+  if(bloc)bloc.style.display='block';
+  const an=new Date(draft.t||Date.now()).getFullYear();
+  const cur=fructAnnee(draft,an);
+  const hist=(draft.fruct||[]).filter(x=>x.an!==an).sort((a,b)=>b.an-a.an);
+  z.innerHTML=
+    '<div class="chipgrid">'+NIVEAUX.map(x=>'<button class="chip'+(cur===x.k?' on':'')+
+      '" data-fr="'+x.k+'">'+x.n+'</button>').join('')+'</div>'+
+    (hist.length
+      ? '<div class="mesgain" style="border-left-color:'+
+        ((NIVEAUX.find(n=>n.k===hist[0].niv)||{}).c||'#C79A4E')+'">Ann\u00e9es pr\u00e9c\u00e9dentes : '+
+        hist.slice(0,6).map(x=>x.an+' '+((NIVEAUX.find(n=>n.k===x.niv)||{}).n||'').toLowerCase())
+          .join(' \u00b7 ')+'</div>'
+      : '<div class="note" style="margin-top:8px">Notez la glandée chaque automne : '+
+        'trois ou quatre ann\u00e9es suffisent \u00e0 faire appara\u00eetre le rythme de l\u2019arbre, '+
+        'et \u00e0 pr\u00e9voir o\u00f9 seront les b\u00eates.</div>');
+}
+$('#e-fruct').onclick=function(ev){
+  const b=ev.target.closest('[data-fr]'); if(!b)return;
+  const an=new Date(draft.t||Date.now()).getFullYear();
+  draft.fruct=(draft.fruct||[]).filter(x=>x.an!==an);
+  if(fructAnnee({fruct:(draft.fruct||[])},an)!==b.dataset.fr)
+    draft.fruct.push({an:an,niv:b.dataset.fr});
+  renderArbre();
+};
 function renderSuivi(){
   if(!draft)return;
   const z=$('#e-suivi'); if(!z)return;
@@ -3591,6 +3674,12 @@ function renderSuivi(){
       '" data-act="'+x.k+'" style="grid-column:1/-1;text-align:left;padding:11px 14px">'+
       '<b>'+x.n+'</b> <span style="opacity:.7;font-size:11.5px">\u00b7 '+x.d+'</span></button>').join('')+
     '</div>'+
+    (a==='abattu'
+      ? '<div class="lab">Date de l\u2019abattage</div>'+
+        '<input type="date" id="e-abattu" value="'+(draft.abattu||'')+'">'+
+        '<div class="note">La fiche est conserv\u00e9e : mesures, photo et \u00e2ge alimenteront '+
+        'le bilan. L\u2019arbre quitte simplement la carte.</div>'
+      : '')+
     ((a==='abattre'&&(draft.marq||[]).length)
       ? '<div class="mesgain" style="border-left-color:var(--ambre)">Cet arbre porte '+
         (draft.marq||[]).length+' marqueur'+((draft.marq||[]).length>1?'s':'')+
@@ -3598,11 +3687,21 @@ function renderSuivi(){
         'suffirait : les cavit\u00e9s et le bois mort mettent un si\u00e8cle \u00e0 se reformer.</div>'
       : '');
 }
+$('#e-suivi').oninput=function(ev){
+  if(ev.target.id==='e-abattu')draft.abattu=ev.target.value||null;
+};
 $('#e-suivi').onclick=function(ev){
   const b=ev.target.closest('[data-etat]');
   if(b){ draft.etat=(draft.etat===b.dataset.etat)?null:b.dataset.etat; renderArbre(); return }
   const a=ev.target.closest('[data-act]');
-  if(a){ draft.action=(draft.action===a.dataset.act)?'':a.dataset.act; renderArbre(); }
+  if(a){
+    draft.action=(draft.action===a.dataset.act)?'':a.dataset.act;
+    /* on propose la date du jour, la coupe se note en general le soir */
+    if(draft.action==='abattu'&&!draft.abattu){
+      const d=new Date(); draft.abattu=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+    }
+    renderArbre();
+  }
 };
 function renderCernes(){
   if(!draft)return;
@@ -3987,8 +4086,12 @@ function buildFilter(){
     $('#f-tag').innerHTML=dispo.map(t=>'<button class="chip" data-t="'+t+'">'+t+'</button>').join('');
     syncFilter();renderAll()};
   $('#f-tag').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;const t=b.dataset.t;
-    FILTER.tags.has(t)?FILTER.tags.delete(t):FILTER.tags.add(t);syncFilter();renderAll()};
-  $('#f-reset').onclick=()=>{FILTER={period:'season',kinds:new Set(['o','p','i']),tags:new Set()};syncFilter();renderAll()};
+    FILTER.tags.has(t)?FILTER.tags.delete(t):FILTER.tags.add(t);
+    /* cocher « Abattus » les fait reapparaitre sur la carte */
+    ST.voirAbattus=FILTER.tags.has('Abattus');
+    syncFilter();renderAll()};
+  $('#f-reset').onclick=()=>{FILTER={period:'season',kinds:new Set(['o','p','i','a']),tags:new Set()};
+    ST.voirAbattus=false;syncFilter();renderAll()};
 }
 function syncFilter(){
   $$('#f-per [data-p]').forEach(b=>b.classList.toggle('on',b.dataset.p===FILTER.period));
@@ -4230,6 +4333,108 @@ function renderStats(){
     (ev!==null?'<div class="note" style="margin-top:6px">Observations '+
       (ev>=0?'en hausse de '+ev:'en baisse de '+(-ev))+' % par rapport \u00e0 la saison pass\u00e9e '+
       '\u00e0 la m\u00eame date.</div>':'');
+
+  /* ---------- arbres ---------- */
+  const arbTous=recsOf(ST.aT).filter(r=>!r.del&&r.kind==='a');
+  const zArb=$('#arbres');
+  if(zArb){
+    if(!arbTous.length){ zArb.innerHTML='<div class="empty">Aucun arbre not\u00e9.</div>' }
+    else{
+      const debout=arbTous.filter(r=>r.action!=='abattu');
+      const coupes=arbTous.filter(r=>r.action==='abattu');
+      const anCour=new Date().getFullYear();
+      /* volume grossier : un tronc assimile a un cylindre, corrige
+         d'un coefficient de forme de 0,5 — l'usage en cubage sommaire */
+      const vol=function(r){
+        if(!r.circ||!r.haut)return 0;
+        const d=r.circ/Math.PI/100;
+        return Math.PI*d*d/4*r.haut*0.5;
+      };
+      const parAn={};
+      coupes.forEach(function(r){
+        const a=r.abattu?new Date(r.abattu).getFullYear():new Date(r.t).getFullYear();
+        parAn[a]=parAn[a]||{n:0,v:0,ess:{}};
+        parAn[a].n++; parAn[a].v+=vol(r);
+        const nom=(SP[r.sp]||{}).nom||r.sp;
+        parAn[a].ess[nom]=(parAn[a].ess[nom]||0)+1;
+      });
+      const ans=Object.keys(parAn).map(Number).sort((a,b)=>b-a);
+      const vmax=Math.max.apply(null,[0.1].concat(ans.map(a=>parAn[a].v)));
+      const habitats=debout.filter(r=>(r.marq||[]).length>=2).length;
+      const aFaire=debout.filter(r=>r.action==='abattre'||r.action==='elaguer').length;
+
+      zArb.innerHTML=
+        '<div class="kpis">'+
+        '<div class="kpi"><div class="n">'+debout.length+'</div><div class="k">Arbres suivis</div></div>'+
+        '<div class="kpi"><div class="n">'+habitats+'</div><div class="k">Arbres-habitats</div></div>'+
+        '<div class="kpi"><div class="n">'+aFaire+'</div><div class="k">Interventions \u00e0 faire</div></div>'+
+        '<div class="kpi"><div class="n">'+coupes.length+'</div><div class="k">Abattus \u00e0 ce jour</div></div>'+
+        '</div>'+
+        (ans.length
+          ? '<div class="lab">Coupes par ann\u00e9e</div>'+
+            ans.map(function(a){const d=parAn[a];
+              const ess=Object.entries(d.ess).sort((x,y)=>y[1]-x[1])
+                .map(e=>e[1]+' '+e[0].toLowerCase()).join(', ');
+              return '<div class="bar"><div class="top"><span>'+a+'</span>'+
+                '<span class="mono">'+d.n+' arbre'+(d.n>1?'s':'')+
+                (d.v>0.05?' \u00b7 '+d.v.toFixed(1)+' m\u00b3':'')+'</span></div>'+
+                '<div class="track"><i class="p" style="width:'+(d.v/vmax*100)+'%"></i></div>'+
+                '<div class="mono" style="font-size:10.5px;color:var(--brume-2);margin-top:4px">'+
+                esc(ess)+'</div></div>';
+            }).join('')+
+            '<div class="note">Volume estim\u00e9 par cubage sommaire, \u00e0 partir du tour et '+
+            'de la hauteur. Il vaut pour comparer les ann\u00e9es, pas pour vendre du bois.</div>'
+          : '<div class="note">Aucune coupe enregistr\u00e9e. Marquez un arbre \u00ab Abattu \u00bb '+
+            'apr\u00e8s le chantier : sa fiche reste et alimente ce bilan.</div>');
+
+      /* glandee */
+      const zG=$('#glandee');
+      if(zG){
+        const porteurs=debout.filter(r=>fructifie(r.sp));
+        if(!porteurs.length){
+          zG.innerHTML='<div class="note">Notez des ch\u00eanes, h\u00eatres ou ch\u00e2taigniers : '+
+            'leur fructification annonce o\u00f9 seront les b\u00eates \u00e0 l\u2019automne.</div>';
+        }else{
+          const annees=[];
+          for(let a=anCour;a>anCour-6;a--){
+            const idx=indiceGlandee(recsOf(ST.aT),a);
+            if(idx)annees.push({an:a,idx:idx});
+          }
+          if(!annees.length){
+            zG.innerHTML='<div class="note">'+porteurs.length+' arbre'+(porteurs.length>1?'s':'')+
+              ' \u00e0 fruits suivi'+(porteurs.length>1?'s':'')+', mais aucune gland\u00e9e not\u00e9e. '+
+              'Chaque automne, indiquez le niveau sur la fiche de l\u2019arbre : '+
+              'trois ann\u00e9es suffisent \u00e0 voir le rythme.</div>';
+          }else{
+            /* sangliers vus a l'automne de chaque annee, pour comparaison */
+            const sangAutomne=function(a){
+              return recsOf(ST.aT).filter(function(r){
+                if(r.kind==='a'||r.sp!=='SAN')return false;
+                const d=new Date(r.t);
+                return d.getFullYear()===a&&d.getMonth()>=8&&d.getMonth()<=11;
+              }).reduce((s,r)=>s+totalOf(r),0);
+            };
+            const smax=Math.max.apply(null,[1].concat(annees.map(x=>sangAutomne(x.an))));
+            zArb.innerHTML+='';
+            zG.innerHTML=annees.map(function(x){
+              const N=NIVEAUX.slice().reverse().find(n=>n.v<=Math.round(x.idx.moy))||NIVEAUX[0];
+              const sg=sangAutomne(x.an);
+              return '<div class="bar"><div class="top"><span>'+x.an+' \u00b7 '+N.n.toLowerCase()+
+                '</span><span class="mono">'+x.idx.fortes+' arbre'+(x.idx.fortes>1?'s':'')+
+                ' en pleine gland\u00e9e</span></div>'+
+                '<div class="track"><i style="width:'+(x.idx.moy/3*100)+'%;background:'+N.c+'"></i></div>'+
+                (sg?'<div class="mono" style="font-size:10.5px;color:var(--brume-2);margin-top:4px">'+
+                  sg+' sanglier'+(sg>1?'s':'')+' vus de septembre \u00e0 d\u00e9cembre</div>':'')+
+                '</div>';
+            }).join('')+
+            '<div class="note">La gland\u00e9e commande le gagnage : une bonne ann\u00e9e retient '+
+            'les compagnies en for\u00eat, une ann\u00e9e nulle les envoie dans les cultures. '+
+            'Les chiffres de sanglier sont l\u00e0 pour que vous jugiez vous-m\u00eame du lien.</div>';
+          }
+        }
+      }
+    }
+  }
 
   const se={};recsOf(ST.aT).forEach(function(r){const y=seasonOf(new Date(r.t));
     if(!se[y])se[y]={o:0,p:0,i:0};se[y][r.kind]+=totalOf(r)});
@@ -4556,6 +4761,7 @@ function ficheVers(r){
     observe_le:new Date(r.t).toISOString(), poids_kg:r.weight||null, note:r.note||null,
     photos:(r.photos||[]).map(p=>({role:p.role,chemin:p.chemin||null})),
     mes:r.mes||null, cernes:r.cernes||null, etat:r.etat||null, action:r.action||null,
+    abattu:r.abattu||null, fruct:r.fruct||null,
     circ:r.circ||null, haut:r.haut||null, milieu:r.milieu||null,
     port:r.port||null, marq:r.marq||null,
     lune:r.lune||null, lune_pct:r.lunep==null?null:r.lunep,
@@ -4580,6 +4786,7 @@ function ficheDepuis(l,ex){
   }
   r.mes=l.mes||null; r.cernes=l.cernes||null;
   r.etat=l.etat||null; r.action=l.action||null;
+  r.abattu=l.abattu||null; r.fruct=l.fruct||null;
   r.circ=l.circ||null; r.haut=l.haut||null;
   r.milieu=l.milieu||null; r.port=l.port||null; r.marq=l.marq||null;
   r.lune=l.lune; r.lunep=l.lune_pct; r.lever=l.soleil_lever;
@@ -5210,8 +5417,13 @@ function carteHTML(pts,largeur,hauteur,marqueurs,contour){
     pins+='<span class="pin'+(m.type?' '+m.type:'')+'" style="left:'+q.x.toFixed(1)+'px;top:'+
       q.y.toFixed(1)+'px">'+m.n+'</span>';
   });
-  return '<div class="carte" style="width:'+largeur+'px;height:'+hauteur+'px">'+
-    img+sur+pins+'</div>';
+  /* On dessine a taille fixe — les tuiles ont une taille propre — puis
+     on met le tout a l'echelle du support. Sans cela, une carte de
+     720 px deborde d'un ecran de telephone et la moitie des arbres
+     se retrouve hors champ. */
+  return '<div class="cadre" style="--l:'+largeur+';--h:'+hauteur+'">'+
+    '<div class="carte" style="width:'+largeur+'px;height:'+hauteur+'px">'+
+    img+sur+pins+'</div></div>';
 }
 
 function dmsCourt(v,pos,neg){
@@ -5361,6 +5573,8 @@ function ouvrirDocumentPlan(plan,surPlace){
   '<title>Plan de coupe \u2014 '+esc(t?t.nom:'Aff\u00fbt')+'</title><style>'+
   '@page{size:A4;margin:14mm 13mm}'+
   '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+  'html,body{max-width:100%;overflow-x:hidden}'+
+  'img,table{max-width:100%}'+
   'body{margin:0;padding:20px 18px;font-family:-apple-system,BlinkMacSystemFont,'+
     '"Helvetica Neue",Arial,sans-serif;color:#16211C;font-size:11pt;line-height:1.5;'+
     'max-width:820px;margin-left:auto;margin-right:auto}'+
@@ -5370,8 +5584,12 @@ function ouvrirDocumentPlan(plan,surPlace){
   '.bandeau{background:#F3F1E8;border-left:4px solid #C15346;padding:14px 16px;'+
     'border-radius:0 10px 10px 0;margin:14px 0 22px;font-size:10.5pt;line-height:1.55}'+
   '.bandeau b{color:#A8392C}'+
-  '.carte{position:relative;overflow:hidden;border-radius:10px;background:#DDD;'+
-    'margin:0 0 10px;max-width:100%}'+
+  '.cadre{position:relative;width:100%;margin:0 0 12px;overflow:hidden;'+
+    'border-radius:10px;background:#DDD;'+
+    'aspect-ratio:calc(var(--l)) / calc(var(--h))}'+
+  '.carte{position:absolute;left:0;top:0;transform-origin:0 0}'+
+  '@media print{.cadre{aspect-ratio:auto;height:auto}'+
+    '.carte{position:relative;transform:none}}'+
   '.tu{position:absolute;width:256px;height:256px;display:block}'+
   '.ov{position:absolute;left:0;top:0}'+
   '.pin{position:absolute;transform:translate(-50%,-50%);min-width:26px;height:26px;'+
@@ -5382,7 +5600,8 @@ function ouvrirDocumentPlan(plan,surPlace){
   '.leg{font-size:9.5pt;color:#5C6B63;margin-bottom:26px}'+
   '.leg i{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 4px 0 12px;'+
     'vertical-align:-1px}'+
-  'table{width:100%;border-collapse:collapse;font-size:10pt}'+
+  'table{width:100%;border-collapse:collapse;font-size:10pt;table-layout:fixed}'+
+  'td,th{word-break:break-word}'+
   'th{text-align:left;font-size:8.5pt;text-transform:uppercase;letter-spacing:.05em;'+
     'color:#5C6B63;border-bottom:1.5px solid #16211C;padding:8px 10px}'+
   'td{padding:11px 10px;border-bottom:1px solid #DDD8CC;vertical-align:top}'+
@@ -5399,6 +5618,13 @@ function ouvrirDocumentPlan(plan,surPlace){
   '.fact{font-size:9.5pt;font-weight:600;color:#A8392C}'+
   '.fb{display:flex;gap:16px;padding:16px}'+
   '.fp{width:150px;height:150px;object-fit:cover;border-radius:8px;flex:none;background:#EEE}'+
+  '@media screen and (max-width:560px){'+
+    '.fb{flex-direction:column;gap:12px}'+
+    '.fp{width:100%;height:180px}'+
+    '.fd{grid-template-columns:1fr 1fr}'+
+    'table{font-size:9pt}'+
+    'td,th{padding:9px 6px}'+
+  '}'+
   '.fp.vide{display:flex;align-items:center;justify-content:center;color:#9AA49E;font-size:9pt}'+
   '.fd{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:11px 18px;align-content:start}'+
   '.fd>div{border-bottom:1px solid #EEE9DE;padding-bottom:7px}'+
@@ -5448,6 +5674,14 @@ function ouvrirDocumentPlan(plan,surPlace){
   '<div class="saut"></div><h1>Fiches par arbre</h1>'+
   '<div class="sst">Une photo d\u2019ensemble par sujet, prise depuis le sol.</div>'+
   fiches+
+  '<script>(function(){function k(){'+
+    'document.querySelectorAll(".cadre").forEach(function(c){'+
+      'var m=c.firstElementChild, l=parseFloat(c.style.getPropertyValue("--l"));'+
+      'var r=c.clientWidth/l; m.style.transform="scale("+r+")";});}'+
+    'k();addEventListener("resize",k);addEventListener("orientationchange",k);'+
+    'addEventListener("beforeprint",function(){'+
+      'document.querySelectorAll(".carte").forEach(function(m){m.style.transform="none"})});'+
+    'addEventListener("afterprint",k);})();<\/script>'+
   '<div class="noimp"><button class="sec" onclick="window.close()">Fermer</button>'+
     '<button onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>'+
   '</body></html>';

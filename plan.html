@@ -82,8 +82,13 @@ function carteHTML(pts,largeur,hauteur,marqueurs,contour){
     pins+='<span class="pin'+(m.type?' '+m.type:'')+'" style="left:'+q.x.toFixed(1)+'px;top:'+
       q.y.toFixed(1)+'px">'+m.n+'</span>';
   });
-  return '<div class="carte" style="width:'+largeur+'px;height:'+hauteur+'px">'+
-    img+sur+pins+'</div>';
+  /* On dessine a taille fixe — les tuiles ont une taille propre — puis
+     on met le tout a l'echelle du support. Sans cela, une carte de
+     720 px deborde d'un ecran de telephone et la moitie des arbres
+     se retrouve hors champ. */
+  return '<div class="cadre" style="--l:'+largeur+';--h:'+hauteur+'">'+
+    '<div class="carte" style="width:'+largeur+'px;height:'+hauteur+'px">'+
+    img+sur+pins+'</div></div>';
 }
 
 function dmsCourt(v,pos,neg){
@@ -141,6 +146,8 @@ function ouvrirDocumentPlan(plan,surPlace){
   '<title>Plan de coupe \u2014 '+esc(t?t.nom:'Aff\u00fbt')+'</title><style>'+
   '@page{size:A4;margin:14mm 13mm}'+
   '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+  'html,body{max-width:100%;overflow-x:hidden}'+
+  'img,table{max-width:100%}'+
   'body{margin:0;padding:20px 18px;font-family:-apple-system,BlinkMacSystemFont,'+
     '"Helvetica Neue",Arial,sans-serif;color:#16211C;font-size:11pt;line-height:1.5;'+
     'max-width:820px;margin-left:auto;margin-right:auto}'+
@@ -150,8 +157,12 @@ function ouvrirDocumentPlan(plan,surPlace){
   '.bandeau{background:#F3F1E8;border-left:4px solid #C15346;padding:14px 16px;'+
     'border-radius:0 10px 10px 0;margin:14px 0 22px;font-size:10.5pt;line-height:1.55}'+
   '.bandeau b{color:#A8392C}'+
-  '.carte{position:relative;overflow:hidden;border-radius:10px;background:#DDD;'+
-    'margin:0 0 10px;max-width:100%}'+
+  '.cadre{position:relative;width:100%;margin:0 0 12px;overflow:hidden;'+
+    'border-radius:10px;background:#DDD;'+
+    'aspect-ratio:calc(var(--l)) / calc(var(--h))}'+
+  '.carte{position:absolute;left:0;top:0;transform-origin:0 0}'+
+  '@media print{.cadre{aspect-ratio:auto;height:auto}'+
+    '.carte{position:relative;transform:none}}'+
   '.tu{position:absolute;width:256px;height:256px;display:block}'+
   '.ov{position:absolute;left:0;top:0}'+
   '.pin{position:absolute;transform:translate(-50%,-50%);min-width:26px;height:26px;'+
@@ -162,7 +173,8 @@ function ouvrirDocumentPlan(plan,surPlace){
   '.leg{font-size:9.5pt;color:#5C6B63;margin-bottom:26px}'+
   '.leg i{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 4px 0 12px;'+
     'vertical-align:-1px}'+
-  'table{width:100%;border-collapse:collapse;font-size:10pt}'+
+  'table{width:100%;border-collapse:collapse;font-size:10pt;table-layout:fixed}'+
+  'td,th{word-break:break-word}'+
   'th{text-align:left;font-size:8.5pt;text-transform:uppercase;letter-spacing:.05em;'+
     'color:#5C6B63;border-bottom:1.5px solid #16211C;padding:8px 10px}'+
   'td{padding:11px 10px;border-bottom:1px solid #DDD8CC;vertical-align:top}'+
@@ -179,6 +191,13 @@ function ouvrirDocumentPlan(plan,surPlace){
   '.fact{font-size:9.5pt;font-weight:600;color:#A8392C}'+
   '.fb{display:flex;gap:16px;padding:16px}'+
   '.fp{width:150px;height:150px;object-fit:cover;border-radius:8px;flex:none;background:#EEE}'+
+  '@media screen and (max-width:560px){'+
+    '.fb{flex-direction:column;gap:12px}'+
+    '.fp{width:100%;height:180px}'+
+    '.fd{grid-template-columns:1fr 1fr}'+
+    'table{font-size:9pt}'+
+    'td,th{padding:9px 6px}'+
+  '}'+
   '.fp.vide{display:flex;align-items:center;justify-content:center;color:#9AA49E;font-size:9pt}'+
   '.fd{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:11px 18px;align-content:start}'+
   '.fd>div{border-bottom:1px solid #EEE9DE;padding-bottom:7px}'+
@@ -228,6 +247,14 @@ function ouvrirDocumentPlan(plan,surPlace){
   '<div class="saut"></div><h1>Fiches par arbre</h1>'+
   '<div class="sst">Une photo d\u2019ensemble par sujet, prise depuis le sol.</div>'+
   fiches+
+  '<script>(function(){function k(){'+
+    'document.querySelectorAll(".cadre").forEach(function(c){'+
+      'var m=c.firstElementChild, l=parseFloat(c.style.getPropertyValue("--l"));'+
+      'var r=c.clientWidth/l; m.style.transform="scale("+r+")";});}'+
+    'k();addEventListener("resize",k);addEventListener("orientationchange",k);'+
+    'addEventListener("beforeprint",function(){'+
+      'document.querySelectorAll(".carte").forEach(function(m){m.style.transform="none"})});'+
+    'addEventListener("afterprint",k);})();<\/script>'+
   '<div class="noimp"><button class="sec" onclick="window.close()">Fermer</button>'+
     '<button onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>'+
   '</body></html>';
