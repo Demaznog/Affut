@@ -215,12 +215,12 @@ button:active{transform:scale(.965)}
 .agebox .jauge i{display:block;height:100%;background:var(--grad)}
 .agebox .pct{font-family:var(--mono);font-size:10.5px;color:var(--brume-2);margin-top:6px}
 .lotvues{display:flex;gap:9px;flex-wrap:wrap}
-/* Anneau vert autour des arbres en fructification : plus il est vif et
-   epais, plus la glandee est forte. Le remplissage reste celui de la
-   nature de fiche, on n'ajoute qu'une information. */
-.mk.gl1{box-shadow:0 0 0 2.5px #6E8F5E,0 3px 10px rgba(0,0,0,.5)}
-.mk.gl2{box-shadow:0 0 0 3px #57B87A,0 3px 10px rgba(0,0,0,.5)}
-.mk.gl3{box-shadow:0 0 0 4px #3FD97C,0 0 12px rgba(63,217,124,.55),0 3px 10px rgba(0,0,0,.5)}
+/* Le cercle blanc devient vert sur un arbre qui fructifie : on remplace
+   le contour au lieu d'en ajouter un second, la pastille garde sa taille
+   et le marqueur reste lisible a 31 px. */
+.mk.gl1{border-color:#7FA86C}
+.mk.gl2{border-color:#4FBE7A}
+.mk.gl3{border-color:#3FD97C;border-width:3.5px;box-shadow:0 0 10px rgba(63,217,124,.5),0 3px 10px rgba(0,0,0,.5)}
 .mk.inter{background:#D98A2B;box-shadow:0 0 0 2px rgba(217,138,43,.35),0 3px 10px rgba(0,0,0,.5)}
 .aide{width:19px;height:19px;border-radius:50%;background:var(--anthracite-3);
   border:1px solid var(--trait2);color:var(--brume-2);font-size:11px;font-weight:700;
