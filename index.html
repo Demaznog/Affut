@@ -598,6 +598,11 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
       <div class="portee"><button class="pt-terr" data-portee="1"><span><b id="lg-nom">—</b><span id="lg-meta">—</span></span><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button><button class="pt-filtre" data-filtre="1" id="lg-filtre"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></button></div><div id="loglist"></div></div></div>
     <div class="view" id="v-stat"><div class="pane"><h1>Bilan</h1><p class="lede" id="statsub">—</p>
       <div class="portee"><button class="pt-terr" data-portee="1"><span><b id="st-nom">—</b><span id="st-meta">—</span></span><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button><button class="pt-filtre" data-filtre="1" id="st-filtre"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></button></div>
+      <div class="seg" id="st-quoi" style="margin-bottom:16px">
+        <button data-s="tout" class="on">Tout</button>
+        <button data-s="faune">Faune</button>
+        <button data-s="arbre">Arbres</button>
+      </div>
       <div class="kpis" id="kpis"></div>
       <div id="sec-arbres">
       <div class="lab">Arbres et coupes</div><div id="arbres"></div>
@@ -1050,12 +1055,13 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
       <div class="chipgrid" id="e-port"></div>
       <div class="lab">Hauteur estimée (m)</div>
       <input type="number" id="e-haut" inputmode="numeric" placeholder="ex. 24">
-      <div class="lab">État de l'arbre</div>
-      <div id="e-suivi"></div>
       <div id="e-fructbloc" style="display:none">
-        <div class="lab">Fructification de l'année</div>
+        <div class="lab">Glandée ou fainée de l'année
+          <button class="aide" data-rep="fruct">?</button></div>
         <div id="e-fruct"></div>
       </div>
+      <div class="lab">État de l'arbre</div>
+      <div id="e-suivi"></div>
       <div class="lab">Historique des mesures</div>
       <div id="e-mes"></div>
       <div class="lab">Comptage de cernes <span style="color:var(--brume-2);
@@ -1175,6 +1181,24 @@ const REPERES={
     ['Futaie claire','Arbres espac\u00e9s, houppiers qui se fr\u00f4lent sans se recouvrir. Situation interm\u00e9diaire, la plus fr\u00e9quente en for\u00eat trait\u00e9e.'],
     ['Lisi\u00e8re ou haie','Lumi\u00e8re d\u2019un seul c\u00f4t\u00e9 : le houppier est dissym\u00e9trique, largement d\u00e9velopp\u00e9 vers le vide et r\u00e9duit vers le peuplement.'],
     ['Isol\u00e9, parc, pr\u00e9','Pleine lumi\u00e8re tout autour. Houppier large et bas, branches basses vivantes, tronc court et conique. Accroissement maximal : un ch\u00eane peut prendre 2,5 cm de tour par an contre 1,4 en futaie.']
+   ]},
+ fruct:{titre:'Gland\u00e9e et fain\u00e9e',
+   intro:'Les ch\u00eanes et le h\u00eatre fructifient par \u00e0-coups : une bonne ann\u00e9e tous '+
+     'les trois \u00e0 cinq ans, jamais partout ensemble. C\u2019est elle qui commande le '+
+     'd\u00e9placement du sanglier \u00e0 l\u2019automne.',
+   items:[
+    ['Quand noter','De septembre \u00e0 novembre, quand les fruits sont form\u00e9s ou tomb\u00e9s. '+
+     'Une seule visite par arbre et par an suffit.'],
+    ['Nulle','Aucun fruit sur l\u2019arbre ni au sol. Fr\u00e9quent l\u2019ann\u00e9e qui suit une forte '+
+     'gland\u00e9e : l\u2019arbre a \u00e9puis\u00e9 ses r\u00e9serves.'],
+    ['Faible','Quelques fruits \u00e9pars, sans tapis au sol. Sans effet sur le gagnage.'],
+    ['Moyenne','Fructification nette, fruits visibles dans le houppier et au sol par places.'],
+    ['Forte','Sol couvert, les fruits craquent sous le pied. Une chataigneraie ou une ch\u00eanaie '+
+     'en pleine gland\u00e9e retient les compagnies pendant des semaines et vide les cultures '+
+     'voisines : c\u2019est l\u2019information la plus utile de l\u2019automne.'],
+    ['\u00c0 quoi \u00e7a sert','Trois ou quatre ann\u00e9es de relev\u00e9s font appara\u00eetre le rythme '+
+     'de chaque arbre et les secteurs porteurs. Le bilan met ces chiffres en regard des '+
+     'sangliers vus \u00e0 l\u2019automne : \u00e0 vous de juger du lien sur votre territoire.']
    ]},
  marq:{titre:'Marqueurs de vieillissement',
    intro:'Ce sont eux qui font la valeur \u00e9cologique d\u2019un arbre, davantage que sa taille. Un arbre creux de 2 m de tour h\u00e9berge plus de vie qu\u2019un arbre sain de 4 m.',
@@ -4273,18 +4297,20 @@ function renderStats(){
   const sum=a=>a.reduce((s,r)=>s+totalOf(r),0);
   $('#statsub').textContent=nomVue+' \u00b7 '+periodLabel();
 
-  /* Afficher des indicateurs de faune \u00e0 z\u00e9ro quand on ne regarde que les
-     arbres n'apprend rien et brouille la lecture : chaque section suit
-     la nature filtr\u00e9e. */
-  const kA=FILTER.kinds.has('a');
-  const kF=FILTER.kinds.has('o')||FILTER.kinds.has('p')||FILTER.kinds.has('i');
+  /* Le bilan a son propre s\u00e9lecteur : m\u00ealer les indicateurs de faune et
+     d'arbres ne veut rien dire, et passer par les filtres de la carte
+     pour cela n'\u00e9tait pas trouvable. */
+  const vue=ST.vueBilan||'tout';
+  $$('#st-quoi button').forEach(b=>b.classList.toggle('on',b.dataset.s===vue));
+  const kA=(vue==='tout'||vue==='arbre');
+  const kF=(vue==='tout'||vue==='faune');
   const secA=$('#sec-arbres'), secF=$('#sec-faune');
   if(secA)secA.style.display=kA?'block':'none';
   if(secF)secF.style.display=kF?'block':'none';
   const esp=new Set(v.map(r=>r.sp));
   const jours=new Set(v.map(r=>new Date(r.t).toDateString()));
   const parJour=jours.size?(sum(obs)/jours.size):0;
-  if(kA&&!kF){
+  if(vue==='arbre'){
     /* seulement des arbres : les compteurs de faune n'ont pas de sens */
     const deb=arbres.filter(r=>r.action!=='abattu');
     const hab=deb.filter(r=>(r.marq||[]).length>=2).length;
@@ -4544,6 +4570,10 @@ function syncSon(){
   b.textContent=on?'Son':'Muet';
   b.style.color=on?'var(--ambre)':'var(--brume-2)';
 }
+$('#st-quoi').onclick=function(e){
+  const b=e.target.closest('[data-s]'); if(!b)return;
+  ST.vueBilan=b.dataset.s; save(); renderStats();
+};
 $('#t-filter').onclick=()=>openSheet('#sh-filter');
 const COURT={ign_ortho:'SAT',esri:'SAT',ign_plan:'PLAN',ign_scan:'1:25',osm:'OSM',topo:'TOPO'};
 function syncLayerBtn(){
@@ -5756,6 +5786,7 @@ function ouvrirDocumentPlan(plan,surPlace){
                :{terr:[],battues:[],recs:[],aT:'ALL'};
   ST.equipe=(st&&st.equipe)||null; ST.sync=(st&&st.sync)||null;
   ST.essences=(st&&Array.isArray(st.essences))?st.essences:[];
+  ST.vueBilan=(st&&st.vueBilan)||'tout';
   ST.essences.forEach(function(e){
     if(SP[e.code])return;
     DB.especes.push(e); SP[e.code]=e;
