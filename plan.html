@@ -109,7 +109,7 @@ function ouvrirDocumentPlan(plan,surPlace){
   const lignes=abattre.map(function(r){
     const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
     return '<tr>'+
-      '<td class="num">'+r.n+'</td>'+
+      '<td class="num"><span class="np">'+r.n+'</span></td>'+
       '<td><b>'+esc(r.nom)+'</b><br><i>'+esc(r.latin||'')+'</i></td>'+
       '<td>'+(r.circ?r.circ+' cm<br><span class="pt">\u2300 '+Math.round(r.circ/Math.PI)+' cm</span>':'\u2014')+'</td>'+
       '<td>'+(r.haut?r.haut+' m':'\u2014')+'</td>'+
@@ -174,13 +174,18 @@ function ouvrirDocumentPlan(plan,surPlace){
   '.leg i{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 4px 0 12px;'+
     'vertical-align:-1px}'+
   'table{width:100%;border-collapse:collapse;font-size:10pt;table-layout:fixed}'+
-  'td,th{word-break:break-word}'+
+  'td,th{overflow-wrap:anywhere;hyphens:auto}'+
+  'col.c1{width:9%}col.c2{width:27%}col.c3{width:14%}'+
+  'col.c4{width:9%}col.c5{width:19%}col.c6{width:22%}'+
   'th{text-align:left;font-size:8.5pt;text-transform:uppercase;letter-spacing:.05em;'+
     'color:#5C6B63;border-bottom:1.5px solid #16211C;padding:8px 10px}'+
   'td{padding:11px 10px;border-bottom:1px solid #DDD8CC;vertical-align:top}'+
-  '.num{font-weight:700;font-size:13pt;width:28px}'+
+  '.num{padding-left:0;padding-right:0}'+
+  '.np{display:inline-flex;align-items:center;justify-content:center;'+
+    'width:26px;height:26px;border-radius:13px;background:#D98A2B;color:#fff;'+
+    'font-weight:700;font-size:12pt}'+
   '.pt{color:#5C6B63;font-size:9pt}'+
-  '.gps{font-family:ui-monospace,Menlo,monospace;font-size:9pt}'+
+  '.gps{font-family:ui-monospace,Menlo,monospace;font-size:8.5pt;letter-spacing:-.02em}'+
   'i{color:#5C6B63;font-size:9pt}'+
   '.fiche{break-inside:avoid;page-break-inside:avoid;border:1px solid #DDD8CC;'+
     'border-radius:12px;margin-bottom:18px;overflow:hidden}'+
@@ -196,7 +201,8 @@ function ouvrirDocumentPlan(plan,surPlace){
     '.fp{width:100%;height:180px}'+
     '.fd{grid-template-columns:1fr 1fr}'+
     'table{font-size:9pt}'+
-    'td,th{padding:9px 6px}'+
+    'td,th{padding:9px 5px;font-size:8.5pt}'+
+    '.np{width:22px;height:22px;font-size:10pt}'+
   '}'+
   '.fp.vide{display:flex;align-items:center;justify-content:center;color:#9AA49E;font-size:9pt}'+
   '.fd{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:11px 18px;align-content:start}'+
@@ -239,8 +245,10 @@ function ouvrirDocumentPlan(plan,surPlace){
     (conserver.length?'<i style="background:#2E6B48"></i>arbre \u00e0 conserver, tout proche':'')+
     (t&&t.ring?'<i style="background:#E8A33D;border-radius:2px"></i>limite du territoire':'')+
     '</div>'+
-  '<table><thead><tr><th>N\u00b0</th><th>Essence</th><th>Tour</th><th>Haut.</th>'+
-    '<th>Intervention</th><th>Coordonn\u00e9es</th></tr></thead><tbody>'+lignes+'</tbody></table>'+
+  '<table><colgroup><col class="c1"><col class="c2"><col class="c3">'+
+    '<col class="c4"><col class="c5"><col class="c6"></colgroup>'+
+    '<thead><tr><th>N\u00b0</th><th>Essence</th><th>Tour</th><th>Haut.</th>'+
+    '<th>Interv.</th><th>Coordonn\u00e9es</th></tr></thead><tbody>'+lignes+'</tbody></table>'+
   '<div class="pied">Document \u00e9tabli avec Aff\u00fbt. Les coordonn\u00e9es sont en degr\u00e9s, '+
     'minutes, secondes (WGS 84) : saisissez-les dans un GPS ou un t\u00e9l\u00e9phone pour '+
     'rejoindre chaque sujet.</div>'+
