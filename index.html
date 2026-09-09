@@ -228,6 +228,7 @@ button:active{transform:scale(.965)}
 .mbn{display:block;font-size:15px;font-weight:600;margin-bottom:8px}
 .mbrole{display:inline-block;font-size:12.5px;color:var(--brume-2);
   padding:6px 12px;border-radius:11px;background:var(--anthracite-2);border:1px solid var(--trait)}
+body.attente{opacity:.5}
 .mbrow.moi{background:var(--anthracite-3);border-radius:14px;padding:13px;margin:0 -6px}
 .mbmoi{font-size:11px;font-weight:600;color:var(--foret-clair);background:rgba(62,140,90,.16);
   padding:3px 8px;border-radius:8px;vertical-align:2px}
@@ -643,8 +644,10 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div id="eq-etat" class="note" style="margin-top:0;border-left-color:var(--foret-clair)">—</div>
     <div class="chipgrid" style="margin-top:10px" id="eq-boutons"></div>
     <div class="lab">Chantier</div>
-    <div class="chipgrid"><button class="chip" id="tr-chantier" style="grid-column:1/-1">
-      Plan de coupe pour les bûcherons</button></div>
+    <div class="chipgrid">
+      <button class="chip" id="tr-chantier" style="grid-column:1/-1">Plan de coupe imprimable</button>
+      <button class="chip" id="tr-lien" style="grid-column:1/-1">Envoyer le lien aux bûcherons</button>
+    </div>
     <div class="lab">Sauvegarde</div>
     <div id="sv-etat" class="note" style="margin-top:0;border-left-color:var(--foret-clair)">—</div>
     <div class="chipgrid" style="margin-top:10px">
@@ -740,6 +743,23 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   </div>
   <div class="sfoot"><button class="big ghost" data-close="1">Annuler</button>
     <button class="big primary" id="eq-ok">Continuer</button></div>
+</div>
+
+<div class="sheet short" id="sh-lien">
+  <div class="grab"></div>
+  <div class="shead"><div style="flex:1"><h2>Lien du plan de coupe</h2>
+    <div class="sub" id="lp-sous">—</div></div>
+    <button class="link" data-close="1">Fermer</button></div>
+  <div class="sbody">
+    <input type="text" id="lp-lien" readonly>
+    <div class="chipgrid" style="margin-top:10px">
+      <button class="chip" id="lp-copier">Copier</button>
+      <button class="chip" id="lp-envoyer">Envoyer</button>
+    </div>
+    <div class="note">Ce lien ouvre le plan sur n'importe quel téléphone, sans installer
+      l'application ni créer de compte. Il donne accès à ce seul plan, en lecture, et
+      cesse de fonctionner au bout de 90 jours.</div>
+  </div>
 </div>
 
 <div class="sheet short" id="sh-compte">
@@ -2442,6 +2462,7 @@ $('#sv-file').onchange=function(e){
     'Fusionner',function(){importer(f,true)});
 };
 $('#tr-chantier').onclick=function(){ closeAll(); setTimeout(planChantier,220) };
+$('#tr-lien').onclick=function(){ closeAll(); setTimeout(partagerPlan,220) };
 function ouvrirTerritoires(){renderTerrList();syncSauvegarde();
   if(typeof syncEtat==='function'){syncEtat();syncBoutons()}
   openSheet('#sh-terr')}
@@ -3345,12 +3366,15 @@ addEventListener('online',function(){setTimeout(function(){viderFilePhotos(true)
 
 /* ---------- affichage ---------- */
 const phURL={};        /* cache des URL signees, valables une heure */
-async function urlPhoto(chemin){
-  if(phURL[chemin]&&phURL[chemin].exp>Date.now())return phURL[chemin].u;
+async function urlPhoto(chemin,duree){
+  const d=duree||3600;
+  /* un plan partage vit plusieurs jours : sa photo doit tenir aussi
+     longtemps, on ne met alors pas l'adresse en cache court */
+  if(!duree&&phURL[chemin]&&phURL[chemin].exp>Date.now())return phURL[chemin].u;
   if(!sbPret())return null;
-  const {data,error}=await sb.storage.from('photos').createSignedUrl(chemin,3600);
+  const {data,error}=await sb.storage.from('photos').createSignedUrl(chemin,d);
   if(error||!data)return null;
-  phURL[chemin]={u:data.signedUrl,exp:Date.now()+3300e3};
+  if(!duree)phURL[chemin]={u:data.signedUrl,exp:Date.now()+3300e3};
   return data.signedUrl;
 }
 function syncPhotos(){
@@ -5196,65 +5220,150 @@ function dmsCourt(v,pos,neg){
   return d+'\u00b0'+String(m).padStart(2,'0')+'\u2032'+sec+'\u2033'+s;
 }
 
-async function planChantier(){
+/* Le plan est fige dans un objet : la meme fonction sert a l'afficher
+   ici et a le rejouer depuis un lien, sans acces aux donnees de l'equipe. */
+/* Le plan suit la portee affichee : sur « Hors territoire » on ne verrait
+   pas les arbres du territoire. Le message le dit plutot que de laisser
+   croire qu'aucun arbre n'est marque. */
+function messagePlanVide(){
+  const ailleurs=ST.recs.filter(r=>!r.del&&r.kind==='a'&&
+    (r.action==='abattre'||r.action==='elaguer')).length;
+  const vus=recsOf(ST.aT).filter(r=>!r.del&&r.kind==='a'&&
+    (r.action==='abattre'||r.action==='elaguer')).length;
+  if(ailleurs&&!vus)
+    return ailleurs+' arbre'+(ailleurs>1?'s':'')+' \u00e0 couper, mais hors de la vue '+
+      'courante. Changez de territoire.';
+  return 'Aucun arbre marqu\u00e9 \u00e0 abattre ou \u00e0 \u00e9laguer';
+}
+async function composerPlan(){
   const t=terr();
   const tous=recsOf(ST.aT).filter(r=>!r.del&&r.kind==='a');
   const abattre=tous.filter(r=>r.action==='abattre'||r.action==='elaguer');
-  if(!abattre.length){
-    toast('Aucun arbre marqu\u00e9 \u00e0 abattre ou \u00e0 \u00e9laguer');
+  if(!abattre.length)return null;
+  abattre.sort((a,b)=>b.lat-a.lat||a.lng-b.lng);
+  const SEUIL=50;
+  const conserver=tous.filter(function(r){
+    if(abattre.indexOf(r)>-1)return false;
+    return abattre.some(a=>L.latLng([r.lat,r.lng]).distanceTo(L.latLng([a.lat,a.lng]))<SEUIL);
+  });
+  const arbre=async function(r,n){
+    const p=(r.photos||[]).find(x=>x.role==='ensemble');
+    const sp=SP[r.sp]||{nom:r.sp,latin:''};
+    const mi=(MILIEUX.find(m=>m.k===r.milieu)||{});
+    const a=ageArbre(r.sp,r.circ,mi.f,r.mes,r.cernes);
+    return {n:n, lat:r.lat, lng:r.lng, nom:sp.nom, latin:sp.latin||'',
+      circ:r.circ||null, haut:r.haut||null, action:r.action, etat:r.etat||null,
+      milieu:mi.n||null, note:r.note||'',
+      age:(a&&!a.impossible)?(a.bas+'\u2013'+a.haut+' ans'):null,
+      marq:(r.marq||[]).map(k=>(MARQUEURS.find(y=>y.k===k)||{}).n).filter(Boolean),
+      img:p?(p.chemin?(await urlPhoto(p.chemin,604800))||p.vignette:p.vignette):null};
+  };
+  const liste=[];
+  for(let i=0;i<abattre.length;i++)liste.push(await arbre(abattre[i],i+1));
+  return {titre:(t?t.nom:'Toutes les observations'), dep:(t&&t.dep)||null,
+    ring:(t&&t.ring)||null, date:Date.now(),
+    arbres:liste, garder:conserver.map(r=>({lat:r.lat,lng:r.lng}))};
+}
+
+/* ---------- lien de partage ---------- */
+function jetonPlan(){
+  const a='abcdefghijkmnpqrstuvwxyz23456789';
+  let j='';
+  for(let i=0;i<32;i++)j+=a[Math.floor(Math.random()*a.length)];
+  return j;
+}
+async function partagerPlan(){
+  if(!sbPret()){toast('Rejoignez une \u00e9quipe pour partager un lien');return}
+  if(refusLecture())return;
+  toast('Pr\u00e9paration du lien\u2026');
+  const plan=await composerPlan();
+  if(!plan){toast(messagePlanVide());return}
+  const jeton=jetonPlan();
+  try{
+    const {error}=await sb.from('plan').insert({jeton:jeton,equipe_id:ST.equipe.id,
+      titre:plan.titre,donnees:plan});
+    if(error)throw error;
+  }catch(e){ toast('Lien non cr\u00e9\u00e9 : '+(e.message||'')); return }
+  const lien=location.origin+location.pathname+'#plan='+jeton;
+  $('#lp-lien').value=lien;
+  $('#lp-sous').textContent=plan.arbres.length+' arbre'+
+    (plan.arbres.length>1?'s':'')+' \u00b7 valable 90 jours';
+  openSheet('#sh-lien');
+}
+$('#lp-copier').onclick=async function(){
+  const v=$('#lp-lien').value;
+  try{ await navigator.clipboard.writeText(v); toast('Lien copi\u00e9') }
+  catch(e){ $('#lp-lien').select(); toast('S\u00e9lectionnez et copiez') }
+};
+$('#lp-envoyer').onclick=function(){
+  const v=$('#lp-lien').value;
+  const txt='Plan de coupe \u2014 '+($('#lp-sous').textContent||'')+'\n'+v;
+  if(navigator.share){ navigator.share({title:'Plan de coupe',text:txt}).catch(function(){}) }
+  else location.href='https://wa.me/?text='+encodeURIComponent(txt);
+};
+/* Ouverture d'un plan partage : ni compte, ni equipe, ni donnees locales. */
+async function ouvrirPlanPartage(jeton){
+  document.body.classList.add('attente');
+  if(!await sbCharger()){alert('Service injoignable.');return}
+  const cli=window.supabase.createClient(SB_URL,SB_CLE,{auth:{persistSession:false}});
+  const {data,error}=await cli.rpc('lire_plan',{p_jeton:jeton});
+  document.body.classList.remove('attente');
+  if(error||!data){
+    document.body.innerHTML='<div style="padding:40px 24px;font-family:sans-serif;'+
+      'color:#F4F3EA;background:#0F1815;min-height:100vh">'+
+      '<h1 style="font-size:22px">Plan introuvable</h1>'+
+      '<p style="color:#96AAA0;line-height:1.55">Ce lien a expir\u00e9 ou n\u2019est plus '+
+      'valable. Demandez-en un nouveau \u00e0 la personne qui vous l\u2019a transmis.</p></div>';
     return;
   }
-  abattre.sort((a,b)=>b.lat-a.lat||a.lng-b.lng);   /* du nord au sud */
-  const conserver=tous.filter(r=>abattre.indexOf(r)<0);
+  ouvrirDocumentPlan(data.donnees, true);
+}
 
+async function planChantier(){
   toast('Pr\u00e9paration du plan\u2026');
-  /* les photos distantes ont besoin d'une adresse signee */
-  for(const r of abattre){
-    const p=(r.photos||[]).find(x=>x.role==='ensemble');
-    r._img=p?(p.chemin?(await urlPhoto(p.chemin))||p.vignette:p.vignette):null;
-  }
+  const plan=await composerPlan();
+  if(!plan){toast(messagePlanVide());return}
+  ouvrirDocumentPlan(plan);
+}
 
-  const pts=abattre.map(r=>[r.lat,r.lng])
-    .concat(conserver.map(r=>[r.lat,r.lng]));
-  const marq=abattre.map((r,i)=>({lat:r.lat,lng:r.lng,n:i+1,type:''}))
+function ouvrirDocumentPlan(plan,surPlace){
+  const abattre=plan.arbres, conserver=plan.garder||[];
+  const pts=abattre.map(r=>[r.lat,r.lng]).concat(conserver.map(r=>[r.lat,r.lng]));
+  const marq=abattre.map(r=>({lat:r.lat,lng:r.lng,n:r.n,type:''}))
     .concat(conserver.map(r=>({lat:r.lat,lng:r.lng,n:'\u2022',type:'garde'})));
-
-  const dat=new Date();
-  const lignes=abattre.map(function(r,i){
-    const sp=SP[r.sp]||{nom:r.sp,latin:''};
-    const A=ACTIONS.find(x=>x.k===r.action);
-    const E=ETATS.find(x=>x.k===r.etat);
+  const dat=new Date(plan.date||Date.now());
+  const t={nom:plan.titre,dep:plan.dep,ring:plan.ring};
+  const NOMACT={abattre:'\u00c0 abattre',elaguer:'\u00c0 \u00e9laguer'};
+  const NOMETAT={sain:'Sain',deperit:'D\u00e9p\u00e9rissant',dangereux:'Dangereux',mort:'Mort sur pied'};
+  const lignes=abattre.map(function(r){
+    const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
     return '<tr>'+
-      '<td class="num">'+(i+1)+'</td>'+
-      '<td><b>'+esc(sp.nom)+'</b><br><i>'+esc(sp.latin||'')+'</i></td>'+
-      '<td>'+(r.circ?r.circ+' cm<br><span class="pt">\u2300 '+diametre(r.circ)+' cm</span>':'\u2014')+'</td>'+
+      '<td class="num">'+r.n+'</td>'+
+      '<td><b>'+esc(r.nom)+'</b><br><i>'+esc(r.latin||'')+'</i></td>'+
+      '<td>'+(r.circ?r.circ+' cm<br><span class="pt">\u2300 '+Math.round(r.circ/Math.PI)+' cm</span>':'\u2014')+'</td>'+
       '<td>'+(r.haut?r.haut+' m':'\u2014')+'</td>'+
-      '<td>'+((A&&A.n)||'\u2014')+(E?'<br><span class="pt">'+E.n+'</span>':'')+'</td>'+
+      '<td>'+(A.n||'\u2014')+(E?'<br><span class="pt">'+E.n+'</span>':'')+'</td>'+
       '<td class="gps">'+dmsCourt(r.lat,'N','S')+'<br>'+dmsCourt(r.lng,'E','O')+'</td>'+
       '</tr>';
   }).join('');
 
-  const fiches=abattre.map(function(r,i){
-    const sp=SP[r.sp]||{nom:r.sp,latin:''};
-    const A=ACTIONS.find(x=>x.k===r.action);
-    const E=ETATS.find(x=>x.k===r.etat);
-    const mi=(MILIEUX.find(m=>m.k===r.milieu)||{});
-    const age=ageArbre(r.sp,r.circ,mi.f,r.mes,r.cernes);
-    const mk=(r.marq||[]).map(k=>(MARQUEURS.find(y=>y.k===k)||{}).n).filter(Boolean);
+  const fiches=abattre.map(function(r){
+    const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
+    const mi={n:r.milieu}; const age=r.age?{bas:'',haut:''}:null;
+    const mk=r.marq||[];
     return '<div class="fiche">'+
-      '<div class="fh"><span class="fnum">'+(i+1)+'</span>'+
-        '<span class="ft"><b>'+esc(sp.nom)+'</b><span>'+esc(sp.latin||'')+'</span></span>'+
-        '<span class="fact">'+((A&&A.n)||'')+'</span></div>'+
+      '<div class="fh"><span class="fnum">'+r.n+'</span>'+
+        '<span class="ft"><b>'+esc(r.nom)+'</b><span>'+esc(r.latin||'')+'</span></span>'+
+        '<span class="fact">'+(A.n||'')+'</span></div>'+
       '<div class="fb">'+
-        (r._img?'<img class="fp" src="'+r._img+'">':'<div class="fp vide">Pas de photo</div>')+
+        (r.img?'<img class="fp" src="'+r.img+'">':'<div class="fp vide">Pas de photo</div>')+
         '<div class="fd">'+
           '<div><span>Circonf\u00e9rence</span><b>'+(r.circ?r.circ+' cm':'non mesur\u00e9e')+'</b></div>'+
-          '<div><span>Diam\u00e8tre</span><b>'+(r.circ?diametre(r.circ)+' cm':'\u2014')+'</b></div>'+
+          '<div><span>Diam\u00e8tre</span><b>'+(r.circ?Math.round(r.circ/Math.PI)+' cm':'\u2014')+'</b></div>'+
           '<div><span>Hauteur</span><b>'+(r.haut?r.haut+' m':'\u2014')+'</b></div>'+
           '<div><span>\u00c9tat</span><b>'+((E&&E.n)||'\u2014')+'</b></div>'+
           '<div><span>Milieu</span><b>'+(mi.n||'\u2014')+'</b></div>'+
-          '<div><span>\u00c2ge estim\u00e9</span><b>'+
-            ((age&&!age.impossible)?age.bas+'\u2013'+age.haut+' ans':'\u2014')+'</b></div>'+
+          '<div><span>\u00c2ge estim\u00e9</span><b>'+(r.age||'\u2014')+'</b></div>'+
           '<div class="lg"><span>Coordonn\u00e9es</span><b class="gps">'+
             dmsCourt(r.lat,'N','S')+'   '+dmsCourt(r.lng,'E','O')+'</b></div>'+
           (mk.length?'<div class="lg"><span>\u00c0 signaler</span><b>'+esc(mk.join(', '))+'</b></div>':'')+
@@ -5313,8 +5422,10 @@ async function planChantier(){
   '@media print{.noimp{display:none}}'+
   '.noimp{position:fixed;left:0;right:0;bottom:0;background:#16211C;color:#fff;'+
     'padding:14px;text-align:center;font-size:11pt}'+
+  '.noimp{display:flex;gap:10px;justify-content:center}'+
   '.noimp button{background:#7FB8D6;color:#0F1815;border:0;border-radius:10px;'+
-    'padding:11px 22px;font-size:12pt;font-weight:600;margin-left:12px}'+
+    'padding:12px 22px;font-size:12pt;font-weight:600}'+
+  '.noimp button.sec{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.35)}'+
   '</style></head><body>'+
   '<h1>Plan de coupe</h1>'+
   '<div class="sst">'+esc(t?t.nom:'Toutes les observations')+
@@ -5322,12 +5433,15 @@ async function planChantier(){
     ' \u00b7 \u00e9tabli le '+fmtDate(dat)+' \u00b7 '+abattre.length+' arbre'+
     (abattre.length>1?'s':'')+' concern\u00e9'+(abattre.length>1?'s':'')+'</div>'+
   '<div class="bandeau"><b>Ne coupez que les arbres num\u00e9rot\u00e9s en orange.</b> '+
-    'Les points verts sont des arbres rep\u00e9r\u00e9s \u00e0 conserver : certains portent des '+
-    'cavit\u00e9s ou du bois mort qui font leur valeur. En cas de doute sur le terrain, '+
-    'appelez avant d\u2019abattre.</div>'+
+    (conserver.length
+      ? 'Les points verts signalent '+conserver.length+' arbre'+(conserver.length>1?'s':'')+
+        ' \u00e0 conserver situ\u00e9'+(conserver.length>1?'s':'')+' \u00e0 moins de 50 m d\u2019un '+
+        'sujet \u00e0 couper : c\u2019est l\u00e0 que le risque de confusion existe. '
+      : '')+
+    'En cas de doute sur le terrain, appelez avant d\u2019abattre.</div>'+
   carteHTML(pts,720,470,marq,(t&&t.ring)||null)+
   '<div class="leg"><i style="background:#D98A2B"></i>arbre \u00e0 couper, num\u00e9rot\u00e9'+
-    '<i style="background:#2E6B48"></i>arbre \u00e0 conserver'+
+    (conserver.length?'<i style="background:#2E6B48"></i>arbre \u00e0 conserver, tout proche':'')+
     (t&&t.ring?'<i style="background:#E8A33D;border-radius:2px"></i>limite du territoire':'')+
     '</div>'+
   '<table><thead><tr><th>N\u00b0</th><th>Essence</th><th>Tour</th><th>Haut.</th>'+
@@ -5338,10 +5452,14 @@ async function planChantier(){
   '<div class="saut"></div><h1>Fiches par arbre</h1>'+
   '<div class="sst">Une photo d\u2019ensemble par sujet, prise depuis le sol.</div>'+
   fiches+
-  '<div class="noimp">Ce document est pr\u00eat.'+
+  '<div class="noimp"><button class="sec" onclick="window.close()">Fermer</button>'+
     '<button onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>'+
   '</body></html>';
 
+  if(surPlace){
+    document.open(); document.write(doc); document.close();
+    return;
+  }
   const w=window.open('','_blank');
   if(!w){toast('Autorisez les fen\u00eatres pour ouvrir le plan');return}
   w.document.open(); w.document.write(doc); w.document.close();
@@ -5349,6 +5467,10 @@ async function planChantier(){
 
 /* ---------- demarrage ---------- */
 (async function boot(){
+  /* Un bucheron ouvre le lien : il n'a ni compte ni donnees locales,
+     l'application ne doit pas demarrer pour lui. */
+  const mp=(location.hash||'').match(/[#&]plan=([a-z0-9]{16,})/i);
+  if(mp){ ouvrirPlanPartage(mp[1]); return }
   const st=await load();
   if(st&&st.fond&&BASEDEF.some(b=>b[0]===st.fond))aBase=st.fond;
   if(st&&st.calques)aOver=new Set(st.calques);
