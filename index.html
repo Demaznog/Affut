@@ -5432,7 +5432,10 @@ function ouvrirDocumentPlan(plan,surPlace){
     (t&&t.dep?' \u00b7 d\u00e9partement '+esc(t.dep):'')+
     ' \u00b7 \u00e9tabli le '+fmtDate(dat)+' \u00b7 '+abattre.length+' arbre'+
     (abattre.length>1?'s':'')+' concern\u00e9'+(abattre.length>1?'s':'')+'</div>'+
-  '<div class="bandeau"><b>Ne coupez que les arbres num\u00e9rot\u00e9s en orange.</b> '+
+  /* « Ne coupez que » se lit de travers en diagonale : sur un chantier,
+     une affirmation vaut mieux qu'une restriction. */
+  '<div class="bandeau"><b>Coupez uniquement les arbres portant une pastille orange '+
+    'num\u00e9rot\u00e9e.</b> '+
     (conserver.length
       ? 'Les points verts signalent '+conserver.length+' arbre'+(conserver.length>1?'s':'')+
         ' \u00e0 conserver situ\u00e9'+(conserver.length>1?'s':'')+' \u00e0 moins de 50 m d\u2019un '+
