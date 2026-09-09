@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Plan de coupe</title>
+<style>
+body{margin:0;background:#0F1815;color:#F4F3EA;min-height:100vh;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.att{padding:48px 24px;text-align:center;color:#96AAA0;font-size:15px}
+.err{padding:44px 24px;max-width:520px;margin:0 auto}
+.err h1{font-size:22px;margin:0 0 10px;letter-spacing:-.02em}
+.err p{color:#96AAA0;line-height:1.6;font-size:15px}
+</style></head>
+<body><div class="att" id="a">Chargement du plan\u2026</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MOIS=['janv.','f\u00e9vr.','mars','avril','mai','juin','juil.','ao\u00fbt',
+  'sept.','oct.','nov.','d\u00e9c.'];
+const fmtDate=d=>d.getDate()+' '+MOIS[d.getMonth()]+' '+d.getFullYear();
+const SB_URL='https://uryqxqebuhpkdquxlela.supabase.co';
+const SB_CLE='sb_publishable_xxMjr_BR1bIGAufAylK5EA_rZY-VVbo';
+
+const TUILE=256;
+function lonToX(lon,z){ return (lon+180)/360*Math.pow(2,z) }
+function latToY(lat,z){
+  const r=lat*Math.PI/180;
+  return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z);
+}
+function urlTuile(x,y,z){
+  return 'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile'+
+    '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/jpeg'+
+    '&TILEMATRIX='+z+'&TILEROW='+y+'&TILECOL='+x;
+}
+/* Emprise des points, avec une marge pour ne pas coller aux bords. */
+function empriseDe(pts,marge){
+  const la=pts.map(p=>p[0]), ln=pts.map(p=>p[1]);
+  let n=Math.max(...la), s=Math.min(...la), e=Math.max(...ln), o=Math.min(...ln);
+  const dl=Math.max(n-s,0.0006), dn=Math.max(e-o,0.0006);
+  return {n:n+dl*marge, s:s-dl*marge, e:e+dn*marge, o:o-dn*marge};
+}
+/* Zoom le plus fin qui tienne dans la largeur voulue. */
+function zoomPour(emp,largeur,hauteur){
+  for(let z=19;z>=10;z--){
+    const l=(lonToX(emp.e,z)-lonToX(emp.o,z))*TUILE;
+    const h=(latToY(emp.s,z)-latToY(emp.n,z))*TUILE;
+    if(l<=largeur&&h<=hauteur)return z;
+  }
+  return 10;
+}
+function carteHTML(pts,largeur,hauteur,marqueurs,contour){
+  const emp=empriseDe(pts,0.22);
+  const z=zoomPour(emp,largeur,hauteur);
+  const x0=lonToX(emp.o,z), y0=latToY(emp.n,z);
+  const x1=lonToX(emp.e,z), y1=latToY(emp.s,z);
+  const l=(x1-x0)*TUILE, h=(y1-y0)*TUILE;
+  /* on centre l'emprise dans le cadre demande */
+  const dx=(largeur-l)/2, dy=(hauteur-h)/2;
+  /* on remplit le cadre entier : sinon des bandes grises subsistent
+     autour de l'emprise, et le bucheron perd les reperes alentour */
+  const tx0=Math.floor(x0-dx/TUILE), tx1=Math.ceil(x1+dx/TUILE);
+  const ty0=Math.floor(y0-dy/TUILE), ty1=Math.ceil(y1+dy/TUILE);
+  let img='';
+  for(let tx=tx0;tx<tx1;tx++){
+    for(let ty=ty0;ty<ty1;ty++){
+      const px=dx+(tx-x0)*TUILE, py=dy+(ty-y0)*TUILE;
+      img+='<img class="tu" src="'+urlTuile(tx,ty,z)+'" style="left:'+px+'px;top:'+py+'px">';
+    }
+  }
+  const proj=(lat,lng)=>({x:dx+(lonToX(lng,z)-x0)*TUILE, y:dy+(latToY(lat,z)-y0)*TUILE});
+  let sur='';
+  if(contour&&contour.length>2){
+    const d=contour.map(function(p,i){const q=proj(p[0],p[1]);
+      return (i?'L':'M')+q.x.toFixed(1)+' '+q.y.toFixed(1)}).join(' ')+' Z';
+    sur='<svg class="ov" width="'+largeur+'" height="'+hauteur+'">'+
+      '<path d="'+d+'" fill="none" stroke="#E8A33D" stroke-width="2.5" stroke-dasharray="7 5"/></svg>';
+  }
+  let pins='';
+  marqueurs.forEach(function(m){
+    const q=proj(m.lat,m.lng);
+    pins+='<span class="pin'+(m.type?' '+m.type:'')+'" style="left:'+q.x.toFixed(1)+'px;top:'+
+      q.y.toFixed(1)+'px">'+m.n+'</span>';
+  });
+  return '<div class="carte" style="width:'+largeur+'px;height:'+hauteur+'px">'+
+    img+sur+pins+'</div>';
+}
+
+function dmsCourt(v,pos,neg){
+  const s=v<0?neg:pos, a=Math.abs(v);
+  const d=Math.floor(a), m=Math.floor((a-d)*60), sec=(((a-d)*60-m)*60).toFixed(1);
+  return d+'\u00b0'+String(m).padStart(2,'0')+'\u2032'+sec+'\u2033'+s;
+}
+
+function ouvrirDocumentPlan(plan,surPlace){
+  const abattre=plan.arbres, conserver=plan.garder||[];
+  const pts=abattre.map(r=>[r.lat,r.lng]).concat(conserver.map(r=>[r.lat,r.lng]));
+  const marq=abattre.map(r=>({lat:r.lat,lng:r.lng,n:r.n,type:''}))
+    .concat(conserver.map(r=>({lat:r.lat,lng:r.lng,n:'\u2022',type:'garde'})));
+  const dat=new Date(plan.date||Date.now());
+  const t={nom:plan.titre,dep:plan.dep,ring:plan.ring};
+  const NOMACT={abattre:'\u00c0 abattre',elaguer:'\u00c0 \u00e9laguer'};
+  const NOMETAT={sain:'Sain',deperit:'D\u00e9p\u00e9rissant',dangereux:'Dangereux',mort:'Mort sur pied'};
+  const lignes=abattre.map(function(r){
+    const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
+    return '<tr>'+
+      '<td class="num">'+r.n+'</td>'+
+      '<td><b>'+esc(r.nom)+'</b><br><i>'+esc(r.latin||'')+'</i></td>'+
+      '<td>'+(r.circ?r.circ+' cm<br><span class="pt">\u2300 '+Math.round(r.circ/Math.PI)+' cm</span>':'\u2014')+'</td>'+
+      '<td>'+(r.haut?r.haut+' m':'\u2014')+'</td>'+
+      '<td>'+(A.n||'\u2014')+(E?'<br><span class="pt">'+E.n+'</span>':'')+'</td>'+
+      '<td class="gps">'+dmsCourt(r.lat,'N','S')+'<br>'+dmsCourt(r.lng,'E','O')+'</td>'+
+      '</tr>';
+  }).join('');
+
+  const fiches=abattre.map(function(r){
+    const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
+    const mi={n:r.milieu}; const age=r.age?{bas:'',haut:''}:null;
+    const mk=r.marq||[];
+    return '<div class="fiche">'+
+      '<div class="fh"><span class="fnum">'+r.n+'</span>'+
+        '<span class="ft"><b>'+esc(r.nom)+'</b><span>'+esc(r.latin||'')+'</span></span>'+
+        '<span class="fact">'+(A.n||'')+'</span></div>'+
+      '<div class="fb">'+
+        (r.img?'<img class="fp" src="'+r.img+'">':'<div class="fp vide">Pas de photo</div>')+
+        '<div class="fd">'+
+          '<div><span>Circonf\u00e9rence</span><b>'+(r.circ?r.circ+' cm':'non mesur\u00e9e')+'</b></div>'+
+          '<div><span>Diam\u00e8tre</span><b>'+(r.circ?Math.round(r.circ/Math.PI)+' cm':'\u2014')+'</b></div>'+
+          '<div><span>Hauteur</span><b>'+(r.haut?r.haut+' m':'\u2014')+'</b></div>'+
+          '<div><span>\u00c9tat</span><b>'+((E&&E.n)||'\u2014')+'</b></div>'+
+          '<div><span>Milieu</span><b>'+(mi.n||'\u2014')+'</b></div>'+
+          '<div><span>\u00c2ge estim\u00e9</span><b>'+(r.age||'\u2014')+'</b></div>'+
+          '<div class="lg"><span>Coordonn\u00e9es</span><b class="gps">'+
+            dmsCourt(r.lat,'N','S')+'   '+dmsCourt(r.lng,'E','O')+'</b></div>'+
+          (mk.length?'<div class="lg"><span>\u00c0 signaler</span><b>'+esc(mk.join(', '))+'</b></div>':'')+
+          (r.note?'<div class="lg"><span>Note</span><b>'+esc(r.note)+'</b></div>':'')+
+        '</div></div></div>';
+  }).join('');
+
+  const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
+  '<title>Plan de coupe \u2014 '+esc(t?t.nom:'Aff\u00fbt')+'</title><style>'+
+  '@page{size:A4;margin:12mm}'+
+  '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+  'body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;'+
+    'color:#16211C;font-size:11pt;line-height:1.45}'+
+  'h1{font-size:20pt;margin:0 0 2px;letter-spacing:-.02em}'+
+  '.sst{color:#5C6B63;font-size:10pt;margin-bottom:14px}'+
+  '.bandeau{background:#F3F1E8;border-left:4px solid #C15346;padding:11px 14px;'+
+    'border-radius:0 8px 8px 0;margin:12px 0 16px;font-size:10.5pt}'+
+  '.bandeau b{color:#A8392C}'+
+  '.carte{position:relative;overflow:hidden;border-radius:8px;background:#DDD;margin:8px 0 6px}'+
+  '.tu{position:absolute;width:256px;height:256px;display:block}'+
+  '.ov{position:absolute;left:0;top:0}'+
+  '.pin{position:absolute;transform:translate(-50%,-50%);min-width:26px;height:26px;'+
+    'border-radius:13px;background:#D98A2B;color:#fff;border:2.5px solid #fff;'+
+    'font-size:12pt;font-weight:700;display:flex;align-items:center;justify-content:center;'+
+    'box-shadow:0 1px 4px rgba(0,0,0,.5);padding:0 4px}'+
+  '.pin.garde{background:#2E6B48;min-width:16px;height:16px;border-width:2px;font-size:9pt}'+
+  '.leg{font-size:9.5pt;color:#5C6B63;margin-bottom:16px}'+
+  '.leg i{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 4px 0 12px;'+
+    'vertical-align:-1px}'+
+  'table{width:100%;border-collapse:collapse;font-size:10pt}'+
+  'th{text-align:left;font-size:8.5pt;text-transform:uppercase;letter-spacing:.05em;'+
+    'color:#5C6B63;border-bottom:1.5px solid #16211C;padding:6px 8px}'+
+  'td{padding:8px;border-bottom:1px solid #DDD8CC;vertical-align:top}'+
+  '.num{font-weight:700;font-size:13pt;width:28px}'+
+  '.pt{color:#5C6B63;font-size:9pt}'+
+  '.gps{font-family:ui-monospace,Menlo,monospace;font-size:9pt}'+
+  'i{color:#5C6B63;font-size:9pt}'+
+  '.fiche{break-inside:avoid;page-break-inside:avoid;border:1px solid #DDD8CC;'+
+    'border-radius:10px;margin-bottom:12px;overflow:hidden}'+
+  '.fh{display:flex;align-items:center;gap:10px;background:#F3F1E8;padding:9px 12px}'+
+  '.fnum{width:30px;height:30px;border-radius:15px;background:#D98A2B;color:#fff;'+
+    'font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}'+
+  '.ft{flex:1}.ft b{display:block;font-size:12pt}.ft span{font-size:9pt;color:#5C6B63;font-style:italic}'+
+  '.fact{font-size:9.5pt;font-weight:600;color:#A8392C}'+
+  '.fb{display:flex;gap:12px;padding:12px}'+
+  '.fp{width:150px;height:150px;object-fit:cover;border-radius:8px;flex:none;background:#EEE}'+
+  '.fp.vide{display:flex;align-items:center;justify-content:center;color:#9AA49E;font-size:9pt}'+
+  '.fd{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:7px 14px;align-content:start}'+
+  '.fd>div{border-bottom:1px solid #EEE9DE;padding-bottom:5px}'+
+  '.fd .lg{grid-column:1/-1}'+
+  '.fd span{display:block;font-size:8pt;text-transform:uppercase;letter-spacing:.04em;color:#5C6B63}'+
+  '.fd b{font-size:10.5pt;font-weight:600}'+
+  '.pied{margin-top:18px;padding-top:10px;border-top:1px solid #DDD8CC;'+
+    'font-size:9pt;color:#5C6B63}'+
+  '.saut{page-break-before:always}'+
+  '@media print{.noimp{display:none}}'+
+  '.noimp{position:fixed;left:0;right:0;bottom:0;background:#16211C;color:#fff;'+
+    'padding:14px;text-align:center;font-size:11pt}'+
+  '.noimp{display:flex;gap:10px;justify-content:center}'+
+  '.noimp button{background:#7FB8D6;color:#0F1815;border:0;border-radius:10px;'+
+    'padding:12px 22px;font-size:12pt;font-weight:600}'+
+  '.noimp button.sec{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.35)}'+
+  '</style></head><body>'+
+  '<h1>Plan de coupe</h1>'+
+  '<div class="sst">'+esc(t?t.nom:'Toutes les observations')+
+    (t&&t.dep?' \u00b7 d\u00e9partement '+esc(t.dep):'')+
+    ' \u00b7 \u00e9tabli le '+fmtDate(dat)+' \u00b7 '+abattre.length+' arbre'+
+    (abattre.length>1?'s':'')+' concern\u00e9'+(abattre.length>1?'s':'')+'</div>'+
+  /* « Ne coupez que » se lit de travers en diagonale : sur un chantier,
+     une affirmation vaut mieux qu'une restriction. */
+  '<div class="bandeau"><b>Coupez uniquement les arbres portant une pastille orange '+
+    'num\u00e9rot\u00e9e.</b> '+
+    (conserver.length
+      ? 'Les points verts signalent '+conserver.length+' arbre'+(conserver.length>1?'s':'')+
+        ' \u00e0 conserver situ\u00e9'+(conserver.length>1?'s':'')+' \u00e0 moins de 50 m d\u2019un '+
+        'sujet \u00e0 couper : c\u2019est l\u00e0 que le risque de confusion existe. '
+      : '')+
+    'En cas de doute sur le terrain, appelez avant d\u2019abattre.</div>'+
+  carteHTML(pts,720,470,marq,(t&&t.ring)||null)+
+  '<div class="leg"><i style="background:#D98A2B"></i>arbre \u00e0 couper, num\u00e9rot\u00e9'+
+    (conserver.length?'<i style="background:#2E6B48"></i>arbre \u00e0 conserver, tout proche':'')+
+    (t&&t.ring?'<i style="background:#E8A33D;border-radius:2px"></i>limite du territoire':'')+
+    '</div>'+
+  '<table><thead><tr><th>N\u00b0</th><th>Essence</th><th>Tour</th><th>Haut.</th>'+
+    '<th>Intervention</th><th>Coordonn\u00e9es</th></tr></thead><tbody>'+lignes+'</tbody></table>'+
+  '<div class="pied">Document \u00e9tabli avec Aff\u00fbt. Les coordonn\u00e9es sont en degr\u00e9s, '+
+    'minutes, secondes (WGS 84) : saisissez-les dans un GPS ou un t\u00e9l\u00e9phone pour '+
+    'rejoindre chaque sujet.</div>'+
+  '<div class="saut"></div><h1>Fiches par arbre</h1>'+
+  '<div class="sst">Une photo d\u2019ensemble par sujet, prise depuis le sol.</div>'+
+  fiches+
+  '<div class="noimp"><button class="sec" onclick="window.close()">Fermer</button>'+
+    '<button onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>'+
+  '</body></html>';
+
+  if(surPlace){
+    document.open(); document.write(doc); document.close();
+    return;
+  }
+  const w=window.open('','_blank');
+  if(!w){toast('Autorisez les fen\u00eatres pour ouvrir le plan');return}
+  w.document.open(); w.document.write(doc); w.document.close();
+}
+
+function erreur(t,d){
+  document.body.innerHTML='<div class="err"><h1>'+t+'</h1><p>'+d+'</p></div>';
+}
+(async function(){
+  const m=(location.hash||'').match(/[#&]?plan=([a-z0-9]{16,})/i);
+  if(!m)return erreur('Aucun plan demand\u00e9',
+    'Ce lien est incomplet. Demandez-en un nouveau \u00e0 la personne qui vous l\u2019a transmis.');
+  if(!window.supabase)return erreur('Service injoignable',
+    'V\u00e9rifiez votre connexion, puis rechargez la page.');
+  const cli=window.supabase.createClient(SB_URL,SB_CLE,{auth:{persistSession:false}});
+  const {data,error}=await cli.rpc('lire_plan',{p_jeton:m[1]});
+  if(error||!data)return erreur('Plan introuvable',
+    'Ce lien a expir\u00e9 ou n\u2019est plus valable. Les plans cessent de fonctionner '+
+    'au bout de 90 jours. Demandez-en un nouveau.');
+  ouvrirDocumentPlan(data.donnees,true);
+})();
+</script></body></html>

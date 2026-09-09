@@ -5284,7 +5284,10 @@ async function partagerPlan(){
       titre:plan.titre,donnees:plan});
     if(error)throw error;
   }catch(e){ toast('Lien non cr\u00e9\u00e9 : '+(e.message||'')); return }
-  const lien=location.origin+location.pathname+'#plan='+jeton;
+  /* page dediee : la racine du site ne doit pas etre atteignable
+     depuis un lien destine a un tiers */
+  const base=location.pathname.replace(/[^/]*$/,'');
+  const lien=location.origin+base+'plan.html#plan='+jeton;
   $('#lp-lien').value=lien;
   $('#lp-sous').textContent=plan.arbres.length+' arbre'+
     (plan.arbres.length>1?'s':'')+' \u00b7 valable 90 jours';
@@ -5301,23 +5304,6 @@ $('#lp-envoyer').onclick=function(){
   if(navigator.share){ navigator.share({title:'Plan de coupe',text:txt}).catch(function(){}) }
   else location.href='https://wa.me/?text='+encodeURIComponent(txt);
 };
-/* Ouverture d'un plan partage : ni compte, ni equipe, ni donnees locales. */
-async function ouvrirPlanPartage(jeton){
-  document.body.classList.add('attente');
-  if(!await sbCharger()){alert('Service injoignable.');return}
-  const cli=window.supabase.createClient(SB_URL,SB_CLE,{auth:{persistSession:false}});
-  const {data,error}=await cli.rpc('lire_plan',{p_jeton:jeton});
-  document.body.classList.remove('attente');
-  if(error||!data){
-    document.body.innerHTML='<div style="padding:40px 24px;font-family:sans-serif;'+
-      'color:#F4F3EA;background:#0F1815;min-height:100vh">'+
-      '<h1 style="font-size:22px">Plan introuvable</h1>'+
-      '<p style="color:#96AAA0;line-height:1.55">Ce lien a expir\u00e9 ou n\u2019est plus '+
-      'valable. Demandez-en un nouveau \u00e0 la personne qui vous l\u2019a transmis.</p></div>';
-    return;
-  }
-  ouvrirDocumentPlan(data.donnees, true);
-}
 
 async function planChantier(){
   toast('Pr\u00e9paration du plan\u2026');
@@ -5470,10 +5456,11 @@ function ouvrirDocumentPlan(plan,surPlace){
 
 /* ---------- demarrage ---------- */
 (async function boot(){
-  /* Un bucheron ouvre le lien : il n'a ni compte ni donnees locales,
-     l'application ne doit pas demarrer pour lui. */
+  /* Un ancien lien pointant sur la racine est redirige vers la page
+     dediee, qui ne contient pas l'application. */
   const mp=(location.hash||'').match(/[#&]plan=([a-z0-9]{16,})/i);
-  if(mp){ ouvrirPlanPartage(mp[1]); return }
+  if(mp){ location.replace(location.pathname.replace(/[^/]*$/,'')+
+    'plan.html#plan='+mp[1]); return }
   const st=await load();
   if(st&&st.fond&&BASEDEF.some(b=>b[0]===st.fond))aBase=st.fond;
   if(st&&st.calques)aOver=new Set(st.calques);
