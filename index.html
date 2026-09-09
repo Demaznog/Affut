@@ -215,13 +215,6 @@ button:active{transform:scale(.965)}
 .agebox .jauge i{display:block;height:100%;background:var(--grad)}
 .agebox .pct{font-family:var(--mono);font-size:10.5px;color:var(--brume-2);margin-top:6px}
 .lotvues{display:flex;gap:9px;flex-wrap:wrap}
-/* Le cercle blanc devient vert sur un arbre qui fructifie : on remplace
-   le contour au lieu d'en ajouter un second, la pastille garde sa taille
-   et le marqueur reste lisible a 31 px. */
-.mk.gl1{border-color:#7FA86C}
-.mk.gl2{border-color:#4FBE7A}
-.mk.gl3{border-color:#3FD97C;border-width:3.5px;box-shadow:0 0 10px rgba(63,217,124,.5),0 3px 10px rgba(0,0,0,.5)}
-.mk.inter{background:#D98A2B;box-shadow:0 0 0 2px rgba(217,138,43,.35),0 3px 10px rgba(0,0,0,.5)}
 .aide{width:19px;height:19px;border-radius:50%;background:var(--anthracite-3);
   border:1px solid var(--trait2);color:var(--brume-2);font-size:11px;font-weight:700;
   display:inline-grid;place-items:center;vertical-align:1px;margin-left:5px}
@@ -526,6 +519,14 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   background:var(--brume);color:#0F1815;font-family:var(--mono);font-size:10px;font-weight:700;
   display:grid;place-items:center;border:1.5px solid rgba(15,24,21,.5)}
 .mk{position:relative}
+.mk.inter{background:#D98A2B;box-shadow:0 0 0 2px rgba(217,138,43,.35),0 3px 10px rgba(0,0,0,.5)}
+/* Le cercle blanc devient vert sur un arbre qui fructifie : on remplace
+   le contour au lieu d'en ajouter un second, la pastille garde sa taille
+   et le marqueur reste lisible a 31 px. */
+.mk.gl1{border-color:#7FA86C}
+.mk.gl2{border-color:#4FBE7A}
+.mk.gl3{border-color:#3FD97C;border-width:3.5px;box-shadow:0 0 10px rgba(63,217,124,.5),0 3px 10px rgba(0,0,0,.5)}
+
 .mklab{position:absolute;left:50%;transform:translateX(-50%);top:100%;margin-top:3px;
   font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.02em;
   background:rgba(15,24,21,.78);color:var(--brume);padding:2px 6px;border-radius:7px;white-space:nowrap;max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
