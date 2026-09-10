@@ -673,6 +673,8 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div class="note">Un territoire se trace en marchant ses limites, ou en suivant le parcellaire cadastral depuis le fond de carte.</div>
     <div class="lab">Équipe</div>
     <div id="eq-liste"></div>
+    <button class="big primary" id="eq-nouvelle" style="width:100%;height:52px;margin:4px 0 14px">
+      + Créer ou rejoindre une équipe</button>
     <div id="eq-etat" class="note" style="margin-top:10px;border-left-color:var(--foret-clair)">—</div>
     <div class="chipgrid" style="margin-top:10px" id="eq-boutons"></div>
     <div class="lab">Chantier</div>
@@ -763,6 +765,10 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div id="eq-bloc-creer">
       <div class="lab">Nom de l'équipe</div>
       <input type="text" id="eq-nom" placeholder="Les Ajoncs" autocomplete="off">
+      <div id="eq-terrbloc">
+        <div class="lab">Territoires à partager</div>
+        <div id="eq-terr"></div>
+      </div>
     </div>
     <div id="eq-bloc-code" style="display:none">
       <div class="lab">Code reçu</div>
@@ -4948,7 +4954,7 @@ function equipesDe(o){
      (territoires, battues) reste attache a l'equipe courante */
   const vises=(o&&typeof o.lat==='number'&&typeof o.lng==='number')
     ? equipesPour(o.lat,o.lng)
-    : (ST.equipe?[ST.equipe.id]:[]);
+    : (l.length?[]:(ST.equipe?[ST.equipe.id]:[]));
   vises.forEach(function(id){ if(l.indexOf(id)<0)l.push(id) });
   return l;
 }
@@ -5317,13 +5323,10 @@ function syncBoutons(){
       '<button class="chip" id="eq-code-voir">Voir le code</button>'+
       '<button class="chip" id="eq-membres" style="grid-column:1/-1">Membres et droits</button>'+
       '<button class="chip" id="eq-compte" style="grid-column:1/-1">Mon identit\u00e9</button>'+
-      '<button class="chip" id="eq-ouvrir" style="grid-column:1/-1">'+
-        'Cr\u00e9er ou rejoindre une autre \u00e9quipe</button>'+
+
       '<button class="chip" id="eq-quitter" style="grid-column:1/-1">Quitter '+
         esc((ST.equipe||{}).nom||'l\u2019\u00e9quipe')+'</button>'
-    : '<button class="chip" id="eq-ouvrir" style="grid-column:1/-1">Partager avec une \u00e9quipe</button>'+
-      '<button class="chip" id="eq-compte" style="grid-column:1/-1">Mon identit\u00e9</button>';
-  const o=$('#eq-ouvrir'); if(o)o.onclick=ouvrirEquipe;
+    : '<button class="chip" id="eq-compte" style="grid-column:1/-1">Mon identit\u00e9</button>';
   renderEquipes();
   const s=$('#eq-sync');   if(s)s.onclick=function(){synchroniser(false)};
   const v=$('#eq-code-voir'); if(v)v.onclick=montrerCode;
@@ -5337,6 +5340,7 @@ function syncBoutons(){
   };
 }
 function syncMode(){
+  setTimeout(renderEqTerr,0);
   $('#eq-m-creer').classList.toggle('on',eqMode==='creer');
   $('#eq-m-rejoindre').classList.toggle('on',eqMode==='rejoindre');
   $('#eq-bloc-creer').style.display=eqMode==='creer'?'block':'none';
@@ -5345,8 +5349,34 @@ function syncMode(){
     ? 'Vous obtiendrez un code \u00e0 transmettre'
     : 'Saisissez le code re\u00e7u';
 }
+let eqTerrChoisis=[];
+function renderEqTerr(){
+  const z=$('#eq-terr'), bloc=$('#eq-terrbloc'); if(!z)return;
+  const l=ST.terr.filter(t=>!t.del);
+  /* rien a partager tant qu'aucun territoire n'est trace */
+  if(!l.length||eqMode!=='creer'){ if(bloc)bloc.style.display='none'; return }
+  if(bloc)bloc.style.display='block';
+  z.innerHTML=l.map(function(t){
+    const on=eqTerrChoisis.indexOf(t.id)>-1;
+    return '<button class="marq'+(on?' on':'')+'" data-eqt="'+t.id+'">'+
+      '<span class="mt"><b>'+esc(t.nom)+'</b><span>'+
+      Math.round(areaHa(t.ring))+' ha'+(t.dep?' \u00b7 dpt '+esc(t.dep):'')+'</span></span>'+
+      '<span class="cas">\u2713</span></button>';
+  }).join('')+
+  '<div class="note">Seuls les territoires coch\u00e9s seront visibles par cette \u00e9quipe. '+
+  'Les observations qui y tombent lui parviendront, les autres non.</div>';
+}
+$('#eq-terr').onclick=function(e){
+  const b=e.target.closest('[data-eqt]'); if(!b)return;
+  const i=eqTerrChoisis.indexOf(b.dataset.eqt);
+  if(i>-1)eqTerrChoisis.splice(i,1); else eqTerrChoisis.push(b.dataset.eqt);
+  renderEqTerr();
+};
 function ouvrirEquipe(){
-  eqMode='creer';syncMode();
+  eqMode='creer';
+  /* a la premiere equipe, tout est propose ; ensuite rien par defaut */
+  eqTerrChoisis=(ST.equipes&&ST.equipes.length)?[]:ST.terr.filter(t=>!t.del).map(t=>t.id);
+  syncMode();
   $('#eq-nom').value='';$('#eq-code').value='';
   $('#eq-pseudo').value=(ST.equipe&&ST.equipe.pseudo)||'';
   openSheet('#sh-equipe');
@@ -5357,6 +5387,7 @@ function montrerCode(){
   $('#cd-code').textContent=ST.equipe.code||'\u2014';
   openSheet('#sh-code');
 }
+$('#eq-nouvelle').onclick=ouvrirEquipe;
 $('#eq-m-creer').onclick=function(){eqMode='creer';syncMode()};
 $('#eq-m-rejoindre').onclick=function(){eqMode='rejoindre';syncMode()};
 $('#eq-ok').onclick=async function(){
@@ -5367,9 +5398,21 @@ $('#eq-ok').onclick=async function(){
     if(eqMode==='creer'){
       const nom=$('#eq-nom').value.trim();
       if(!nom){toast('Nommez l\u2019\u00e9quipe');return}
-      await sbCreerEquipe(nom,pseudo);
-      /* tout ce qui existe deja part vers le serveur */
-      ST.terr.forEach(marquer); ST.battues.forEach(marquer); ST.recs.forEach(marquer);
+      const eq=await sbCreerEquipe(nom,pseudo);
+      /* seuls les territoires retenus, et ce qui s'y rapporte */
+      ST.terr.forEach(function(t){
+        if(eqTerrChoisis.indexOf(t.id)<0)return;
+        t.equipes=(t.equipes||[]).filter(x=>x!==eq.id).concat([eq.id]);
+        marquer(t);
+      });
+      ST.battues.forEach(function(b){
+        if(eqTerrChoisis.indexOf(b.terr)<0)return;
+        b.equipes=(b.equipes||[]).filter(x=>x!==eq.id).concat([eq.id]);
+        marquer(b);
+      });
+      /* on se contente de marquer les fiches : la regle d'affectation
+         calculera leurs equipes a l'envoi, socle compris */
+      ST.recs.forEach(marquer);
       closeAll(); await synchroniser(true); abonner(); syncBoutons();
       setTimeout(montrerCode,400);
     }else{
