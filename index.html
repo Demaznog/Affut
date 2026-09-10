@@ -228,6 +228,15 @@ button:active{transform:scale(.965)}
 .mbrole{display:inline-block;font-size:12.5px;color:var(--brume-2);
   padding:6px 12px;border-radius:11px;background:var(--anthracite-2);border:1px solid var(--trait)}
 body.attente{opacity:.5}
+.chn{flex:none;width:26px;height:26px;border-radius:13px;background:#D98A2B;color:#fff;
+  font-weight:700;font-size:13px;display:grid;place-items:center}
+.chn.el{background:#E3B15E;color:#3A2C10}
+.marq .chn{margin-right:2px}
+#e-partage{display:flex;align-items:center;gap:9px;margin-top:9px;padding:10px 13px;
+  border-radius:14px;background:var(--anthracite-2);border:1px solid var(--trait)}
+#e-partage svg{width:17px;height:17px;flex:none;stroke:var(--foret-clair);fill:none;
+  stroke-width:1.9;stroke-linecap:round}
+#e-partage span{font-size:13px;color:var(--brume-2)}
 .eqrow{display:block;width:100%;text-align:left;padding:13px 15px;border-radius:16px;
   background:var(--anthracite-2);border:1.5px solid var(--trait);margin-bottom:8px}
 .eqrow.on{border-color:var(--foret-clair);background:var(--foret)}
@@ -616,6 +625,20 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     </div>
     <div class="view" id="v-log"><div class="pane"><h1>Journal</h1><p class="lede" id="logsub">—</p>
       <div class="portee"><button class="pt-terr" data-portee="1"><span><b id="lg-nom">—</b><span id="lg-meta">—</span></span><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button><button class="pt-filtre" data-filtre="1" id="lg-filtre"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></button></div><div id="loglist"></div></div></div>
+    <div class="view" id="v-cha"><div class="pane"><h1>Chantier</h1><p class="lede" id="chasub">—</p>
+      <div class="seg" id="cha-quoi" style="margin-bottom:14px">
+        <button data-c="tout" class="on">Tout</button>
+        <button data-c="abattre">À abattre</button>
+        <button data-c="elaguer">À élaguer</button>
+      </div>
+      <div id="cha-resume"></div>
+      <div class="lab">Arbres retenus <button class="aide" id="cha-tous">±</button></div>
+      <div id="cha-liste"></div>
+      <div class="chipgrid" style="margin-top:16px">
+        <button class="chip" id="cha-pdf" style="grid-column:1/-1">Plan imprimable</button>
+        <button class="chip" id="cha-lien" style="grid-column:1/-1">Envoyer le lien aux bûcherons</button>
+      </div>
+    </div></div>
     <div class="view" id="v-stat"><div class="pane"><h1>Bilan</h1><p class="lede" id="statsub">—</p>
       <div class="portee"><button class="pt-terr" data-portee="1"><span><b id="st-nom">—</b><span id="st-meta">—</span></span><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button><button class="pt-filtre" data-filtre="1" id="st-filtre"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></button></div>
       <div class="seg" id="st-quoi" style="margin-bottom:16px">
@@ -661,6 +684,7 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <button class="tab on" data-v="map"><svg viewBox="0 0 24 24"><path d="m9 4-6 3v13l6-3 6 3 6-3V4l-6 3-6-3Z"/><path d="M9 4v13M15 7v13"/></svg>Carte</button>
     <button class="tab" data-v="log"><svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>Journal</button>
     <button class="tab" data-v="stat"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Bilan</button>
+    <button class="tab" data-v="cha"><svg viewBox="0 0 24 24"><path d="M12 21V11M12 11 7 6M12 11l5-5M7 6V3h10v3M4 21h16"/></svg>Chantier</button>
   </div>
 </div>
 <div id="scrim"></div><div id="toast"></div>
@@ -1047,6 +1071,7 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <button class="link" id="e-change">Changer</button></div>
   <div class="sbody">
     <div id="e-pos"></div>
+    <div id="e-partage" style="display:none"></div>
     <div class="lab">Quand <span id="e-moment" style="color:var(--ambre);font-weight:600">—</span></div>
     <div style="display:flex;gap:8px">
       <input type="date" id="e-quand" style="flex:1.4">
@@ -3690,6 +3715,29 @@ function ajouterEssence(latin,nomCommun,famille){
 }
 
 /* ---------- saisie d'un arbre ---------- */
+/* Ou part cette fiche ? La question se pose au moment d'enregistrer,
+   pas en permanence sur la carte. Une ligne, et seulement quand il y a
+   plusieurs equipes : sinon elle n'apprend rien. */
+function nomsEquipes(ids){
+  return (ids||[]).map(function(id){
+    const e=equipeParId(id); return e?e.nom:null;
+  }).filter(Boolean);
+}
+function phrasePartage(noms){
+  if(!noms.length)return '';
+  if(noms.length===1)return 'Partag\u00e9 avec '+noms[0];
+  return 'Partag\u00e9 avec '+noms.slice(0,-1).join(', ')+' et '+noms[noms.length-1];
+}
+function syncPartage(){
+  const z=$('#e-partage'); if(!z)return;
+  if(mesEquipes().length<2||!draft){ z.style.display='none'; return }
+  const noms=nomsEquipes(equipesPour(draft.lat,draft.lng));
+  if(!noms.length){ z.style.display='none'; return }
+  z.style.display='block';
+  z.innerHTML='<svg viewBox="0 0 24 24"><path d="M17 20a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'+
+    'M7 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM17 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'+
+    'M9.6 13.5l4.8 2.8M14.4 7.7L9.6 10.5"/></svg><span>'+esc(phrasePartage(noms))+'</span>';
+}
 function renderArbre(){
   if(!draft)return;
   const c=draft.circ||0;
@@ -3962,6 +4010,7 @@ function openEntry(){
   $('#e-heure').value=pad(dd.getHours())+':'+pad(dd.getMinutes());
   $('#e-moment').textContent=nomMoment(momentDe(draft));
   $('#e-ctx').innerHTML=blocContexte(draft);
+  syncPartage();
   const arb=draft.kind==='a';
   $('#e-kind').style.display=arb?'none':'flex';
   $('#e-arbre').style.display=arb?'block':'none';
@@ -4091,6 +4140,13 @@ function openDetail(id){
           : '')
       : '<div class="lab">'+(r.kind==='p'?'Animaux pr\u00e9lev\u00e9s':'Composition')+'</div>'+lines)+
     (r.weight?'<div class="lab">Poids</div><div class="mono" style="font-size:20px">'+r.weight+' kg</div>':'')+
+    (function(){
+      if(mesEquipes().length<2)return '';
+      const noms=nomsEquipes(r.equipes&&r.equipes.length?r.equipes:equipesPour(r.lat,r.lng));
+      return noms.length?'<div class="lab">Partage</div>'+
+        '<div style="font-size:15px">'+esc(phrasePartage(noms).replace('Partag\u00e9 avec ',''))+
+        '</div>':'';
+    })()+
     (r.auteur_nom?'<div class="lab">Observ\u00e9 par</div>'+
       '<div style="font-size:15px">'+esc(r.auteur_nom)+
       (ST.equipe&&r.auteur_nom===ST.equipe.pseudo?' <span style="color:var(--brume-2)">(vous)</span>':'')+
@@ -4614,7 +4670,9 @@ $$('.tab').forEach(function(t){t.onclick=function(){
   $('#v-map').classList.toggle('on',v==='map');
   $('#v-log').classList.toggle('on',v==='log');
   $('#v-stat').classList.toggle('on',v==='stat');
+  $('#v-cha').classList.toggle('on',v==='cha');
   $('#actionbar').style.display=v==='map'?'flex':'none';
+  if(v==='cha'){ chaChoisis=null; renderChantier() }
   if(v==='map'){setTimeout(()=>map.invalidateSize(),60); if(!PLACE)syncActionBar();
     if(sbPret())renderMembres();}
   else{ if(PLACE)stopPlace(); $('#typebar').classList.remove('on'); }
@@ -5779,12 +5837,24 @@ function messagePlanVide(){
       'courante. Changez de territoire.';
   return 'Aucun arbre marqu\u00e9 \u00e0 abattre ou \u00e0 \u00e9laguer';
 }
-async function composerPlan(){
+async function composerPlan(opt){
+  const o=opt||{};
   const t=terr();
   const tous=recsOf(ST.aT).filter(r=>!r.del&&r.kind==='a');
-  const abattre=tous.filter(r=>r.action==='abattre'||r.action==='elaguer');
+  /* Un chantier d'elagage et un chantier d'abattage ne se font pas le
+     meme jour : on doit pouvoir n'envoyer que l'un des deux, ou une
+     poignee d'arbres. */
+  let abattre=tous.filter(function(r){
+    if(o.quoi==='abattre')return r.action==='abattre';
+    if(o.quoi==='elaguer')return r.action==='elaguer';
+    return r.action==='abattre'||r.action==='elaguer';
+  });
+  if(o.choisis&&o.choisis.length)abattre=abattre.filter(r=>o.choisis.indexOf(r.id)>-1);
   if(!abattre.length)return null;
-  abattre.sort((a,b)=>b.lat-a.lat||a.lng-b.lng);
+  /* les abattages d'abord, les elagages ensuite : c'est l'ordre du
+     chantier, et la numerotation le reflete */
+  const rang=r=>r.action==='abattre'?0:1;
+  abattre.sort((a,b)=>rang(a)-rang(b)||b.lat-a.lat||a.lng-b.lng);
   const SEUIL=50;
   const conserver=tous.filter(function(r){
     if(abattre.indexOf(r)>-1)return false;
@@ -5816,11 +5886,11 @@ function jetonPlan(){
   for(let i=0;i<32;i++)j+=a[Math.floor(Math.random()*a.length)];
   return j;
 }
-async function partagerPlan(){
+async function partagerPlan(opt){
   if(!sbPret()){toast('Rejoignez une \u00e9quipe pour partager un lien');return}
   if(refusLecture())return;
   toast('Pr\u00e9paration du lien\u2026');
-  const plan=await composerPlan();
+  const plan=await composerPlan(opt);
   if(!plan){toast(messagePlanVide());return}
   const jeton=jetonPlan();
   try{
@@ -5849,9 +5919,80 @@ $('#lp-envoyer').onclick=function(){
   else location.href='https://wa.me/?text='+encodeURIComponent(txt);
 };
 
-async function planChantier(){
+/* ---------- page Chantier ---------- */
+let chaQuoi='tout', chaChoisis=null;   /* null = tous les arbres eligibles */
+function chaEligibles(){
+  return recsOf(ST.aT).filter(function(r){
+    if(r.del||r.kind!=='a')return false;
+    if(chaQuoi==='abattre')return r.action==='abattre';
+    if(chaQuoi==='elaguer')return r.action==='elaguer';
+    return r.action==='abattre'||r.action==='elaguer';
+  }).sort(function(a,b){
+    const rg=x=>x.action==='abattre'?0:1;
+    return rg(a)-rg(b)||b.lat-a.lat||a.lng-b.lng;
+  });
+}
+function chaRetenus(){
+  const l=chaEligibles();
+  return chaChoisis===null?l:l.filter(r=>chaChoisis.indexOf(r.id)>-1);
+}
+function renderChantier(){
+  const t=terr();
+  $('#chasub').textContent=(t?t.nom:'Toutes les observations')+
+    ' \u00b7 '+(ST.aT==='ALL'?'tous territoires':'');
+  $$('#cha-quoi button').forEach(b=>b.classList.toggle('on',b.dataset.c===chaQuoi));
+  const elig=chaEligibles(), pris=chaRetenus();
+  const nAb=pris.filter(r=>r.action==='abattre').length;
+  const nEl=pris.filter(r=>r.action==='elaguer').length;
+  $('#cha-resume').innerHTML= elig.length
+    ? '<div class="kpis"><div class="kpi"><div class="n">'+nAb+'</div>'+
+      '<div class="k">\u00c0 abattre</div></div>'+
+      '<div class="kpi"><div class="n">'+nEl+'</div><div class="k">\u00c0 \u00e9laguer</div></div></div>'
+    : '<div class="empty">Aucun arbre marqu\u00e9 \u00e0 abattre ou \u00e0 \u00e9laguer sur cette vue. '+
+      'Ouvrez la fiche d\u2019un arbre et choisissez une intervention.</div>';
+  $('#cha-liste').innerHTML=elig.map(function(r,i){
+    const on=(chaChoisis===null)||chaChoisis.indexOf(r.id)>-1;
+    const sp=SP[r.sp]||{nom:r.sp};
+    const el=(r.action==='elaguer');
+    const rang=pris.indexOf(r);
+    return '<button class="marq'+(on?' on':'')+'" data-cha="'+r.id+'">'+
+      '<span class="chn'+(el?' el':'')+'">'+(on&&rang>-1?(rang+1):'\u00b7')+'</span>'+
+      '<span class="mt"><b>'+esc(sp.nom)+'</b><span>'+
+        (el?'\u00c0 \u00e9laguer':'\u00c0 abattre')+
+        (r.circ?' \u00b7 '+r.circ+' cm de tour':'')+
+        (r.etat?' \u00b7 '+((ETATS.find(x=>x.k===r.etat)||{}).n||'').toLowerCase():'')+
+        '</span></span><span class="cas">\u2713</span></button>';
+  }).join('');
+  const dispo=pris.length>0;
+  $('#cha-pdf').disabled=!dispo; $('#cha-lien').disabled=!dispo;
+}
+$('#cha-quoi').onclick=function(e){
+  const b=e.target.closest('[data-c]'); if(!b)return;
+  chaQuoi=b.dataset.c; chaChoisis=null; renderChantier();
+};
+$('#cha-liste').onclick=function(e){
+  const b=e.target.closest('[data-cha]'); if(!b)return;
+  const l=chaEligibles().map(r=>r.id);
+  if(chaChoisis===null)chaChoisis=l.slice();
+  const i=chaChoisis.indexOf(b.dataset.cha);
+  if(i>-1)chaChoisis.splice(i,1); else chaChoisis.push(b.dataset.cha);
+  renderChantier();
+};
+$('#cha-tous').onclick=function(){
+  const l=chaEligibles().map(r=>r.id);
+  chaChoisis=(chaChoisis===null||chaChoisis.length===l.length)?[]:null;
+  renderChantier();
+};
+function optionsChantier(){
+  const l=chaEligibles().map(r=>r.id);
+  return {quoi:chaQuoi, choisis:(chaChoisis===null||chaChoisis.length===l.length)?null:chaChoisis};
+}
+$('#cha-pdf').onclick=function(){ planChantier(optionsChantier()) };
+$('#cha-lien').onclick=function(){ partagerPlan(optionsChantier()) };
+
+async function planChantier(opt){
   toast('Pr\u00e9paration du plan\u2026');
-  const plan=await composerPlan();
+  const plan=await composerPlan(opt);
   if(!plan){toast(messagePlanVide());return}
   ouvrirDocumentPlan(plan);
 }
@@ -5859,16 +6000,32 @@ async function planChantier(){
 function ouvrirDocumentPlan(plan,surPlace){
   const abattre=plan.arbres, conserver=plan.garder||[];
   const pts=abattre.map(r=>[r.lat,r.lng]).concat(conserver.map(r=>[r.lat,r.lng]));
-  const marq=abattre.map(r=>({lat:r.lat,lng:r.lng,n:r.n,type:''}))
+  const marq=abattre.map(r=>({lat:r.lat,lng:r.lng,n:r.n,
+      type:(r.action==='elaguer'?'elag':'')}))
     .concat(conserver.map(r=>({lat:r.lat,lng:r.lng,n:'\u2022',type:'garde'})));
   const dat=new Date(plan.date||Date.now());
   const t={nom:plan.titre,dep:plan.dep,ring:plan.ring};
+  const nAb=abattre.filter(r=>r.action==='abattre').length;
+  const nEl=abattre.filter(r=>r.action==='elaguer').length;
+  /* La consigne dit ce qu'il y a reellement a faire : un chantier
+     d'elagage n'est pas un abattage, et les confondre couterait cher. */
+  const consigne = (nAb&&nEl)
+    ? '<b>Deux interventions distinctes.</b> Les pastilles orange fonc\u00e9 d\u00e9signent '+
+      nAb+' arbre'+(nAb>1?'s':'')+' \u00e0 abattre, les pastilles orange clair '+
+      nEl+' arbre'+(nEl>1?'s':'')+' \u00e0 \u00e9laguer \u2014 ceux-l\u00e0 restent sur pied. '
+    : nEl
+    ? '<b>Chantier d\u2019\u00e9lagage.</b> '+(nEl>1
+        ? 'Les '+nEl+' arbres num\u00e9rot\u00e9s sont \u00e0 r\u00e9duire ou \u00e0 mettre en s\u00e9curit\u00e9, '
+        : 'L\u2019arbre num\u00e9rot\u00e9 est \u00e0 r\u00e9duire ou \u00e0 mettre en s\u00e9curit\u00e9, ')+
+      'pas \u00e0 abattre. '
+    : '<b>Coupez uniquement les arbres portant une pastille orange num\u00e9rot\u00e9e.</b> ';
+
   const NOMACT={abattre:'\u00c0 abattre',elaguer:'\u00c0 \u00e9laguer'};
   const NOMETAT={sain:'Sain',deperit:'D\u00e9p\u00e9rissant',dangereux:'Dangereux',mort:'Mort sur pied'};
   const lignes=abattre.map(function(r){
     const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
     return '<tr>'+
-      '<td class="num"><span class="np">'+r.n+'</span></td>'+
+      '<td class="num"><span class="np'+(r.action==='elaguer'?' el':'')+'">'+r.n+'</span></td>'+
       '<td><b>'+esc(r.nom)+'</b><br><i>'+esc(r.latin||'')+'</i></td>'+
       '<td>'+(r.circ?r.circ+' cm<br><span class="pt">\u2300 '+Math.round(r.circ/Math.PI)+' cm</span>':'\u2014')+'</td>'+
       '<td>'+(r.haut?r.haut+' m':'\u2014')+'</td>'+
@@ -5877,12 +6034,12 @@ function ouvrirDocumentPlan(plan,surPlace){
       '</tr>';
   }).join('');
 
-  const fiches=abattre.map(function(r){
+  const carteFiche=function(r){
     const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
     const mi={n:r.milieu}; const age=r.age?{bas:'',haut:''}:null;
     const mk=r.marq||[];
     return '<div class="fiche">'+
-      '<div class="fh"><span class="fnum">'+r.n+'</span>'+
+      '<div class="fh"><span class="fnum'+(r.action==='elaguer'?' el':'')+'">'+r.n+'</span>'+
         '<span class="ft"><b>'+esc(r.nom)+'</b><span>'+esc(r.latin||'')+'</span></span>'+
         '<span class="fact">'+(A.n||'')+'</span></div>'+
       '<div class="fb">'+
@@ -5899,10 +6056,13 @@ function ouvrirDocumentPlan(plan,surPlace){
           (mk.length?'<div class="lg"><span>\u00c0 signaler</span><b>'+esc(mk.join(', '))+'</b></div>':'')+
           (r.note?'<div class="lg"><span>Note</span><b>'+esc(r.note)+'</b></div>':'')+
         '</div></div></div>';
-  }).join('');
+  };
+  const fichesAb=abattre.filter(r=>r.action==='abattre').map(carteFiche).join('');
+  const fichesEl=abattre.filter(r=>r.action==='elaguer').map(carteFiche).join('');
 
   const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
-  '<title>Plan de coupe \u2014 '+esc(t?t.nom:'Aff\u00fbt')+'</title><style>'+
+  '<title>'+(nAb&&nEl?'Plan d\u2019intervention':nEl?'Plan d\u2019\u00e9lagage':'Plan de coupe')+
+    ' \u2014 '+esc(t?t.nom:'Aff\u00fbt')+'</title><style>'+
   '@page{size:A4;margin:14mm 13mm}'+
   '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
   'html,body{max-width:100%;overflow-x:hidden}'+
@@ -5928,6 +6088,7 @@ function ouvrirDocumentPlan(plan,surPlace){
     'border-radius:13px;background:#D98A2B;color:#fff;border:2.5px solid #fff;'+
     'font-size:12pt;font-weight:700;display:flex;align-items:center;justify-content:center;'+
     'box-shadow:0 1px 4px rgba(0,0,0,.5);padding:0 4px}'+
+  '.pin.elag{background:#E3B15E;color:#3A2C10}'+
   '.pin.garde{background:#2E6B48;min-width:16px;height:16px;border-width:2px;font-size:9pt}'+
   '.leg{font-size:9.5pt;color:#5C6B63;margin-bottom:26px}'+
   '.leg i{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 4px 0 12px;'+
@@ -5940,6 +6101,7 @@ function ouvrirDocumentPlan(plan,surPlace){
     'color:#5C6B63;border-bottom:1.5px solid #16211C;padding:8px 10px}'+
   'td{padding:11px 10px;border-bottom:1px solid #DDD8CC;vertical-align:top}'+
   '.num{padding-left:0;padding-right:0}'+
+  '.np.el{background:#E3B15E;color:#3A2C10}'+
   '.np{display:inline-flex;align-items:center;justify-content:center;'+
     'width:26px;height:26px;border-radius:13px;background:#D98A2B;color:#fff;'+
     'font-weight:700;font-size:12pt}'+
@@ -5951,6 +6113,7 @@ function ouvrirDocumentPlan(plan,surPlace){
   '.fh{display:flex;align-items:center;gap:12px;background:#F3F1E8;padding:12px 14px}'+
   '.fnum{width:30px;height:30px;border-radius:15px;background:#D98A2B;color:#fff;'+
     'font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}'+
+  '.fnum.el{background:#E3B15E;color:#3A2C10}'+
   '.ft{flex:1}.ft b{display:block;font-size:12pt}.ft span{font-size:9pt;color:#5C6B63;font-style:italic}'+
   '.fact{font-size:9.5pt;font-weight:600;color:#A8392C}'+
   '.fb{display:flex;gap:16px;padding:16px}'+
@@ -5984,15 +6147,12 @@ function ouvrirDocumentPlan(plan,surPlace){
   'body{padding-bottom:110px}'+
   '@media print{body{padding-bottom:0}}'+
   '</style></head><body>'+
-  '<h1>Plan de coupe</h1>'+
+  '<h1>'+(nAb&&nEl?'Plan d\u2019intervention':nEl?'Plan d\u2019\u00e9lagage':'Plan de coupe')+'</h1>'+
   '<div class="sst">'+esc(t?t.nom:'Toutes les observations')+
     (t&&t.dep?' \u00b7 d\u00e9partement '+esc(t.dep):'')+
-    ' \u00b7 \u00e9tabli le '+fmtDate(dat)+' \u00b7 '+abattre.length+' arbre'+
-    (abattre.length>1?'s':'')+' concern\u00e9'+(abattre.length>1?'s':'')+'</div>'+
-  /* « Ne coupez que » se lit de travers en diagonale : sur un chantier,
-     une affirmation vaut mieux qu'une restriction. */
-  '<div class="bandeau"><b>Coupez uniquement les arbres portant une pastille orange '+
-    'num\u00e9rot\u00e9e.</b> '+
+    ' \u00b7 \u00e9tabli le '+fmtDate(dat)+' \u00b7 '+
+    (nAb?nAb+' \u00e0 abattre':'')+((nAb&&nEl)?', ':'')+(nEl?nEl+' \u00e0 \u00e9laguer':'')+'</div>'+
+  '<div class="bandeau">'+consigne+
     (conserver.length
       ? 'Les points verts signalent '+conserver.length+' arbre'+(conserver.length>1?'s':'')+
         ' \u00e0 conserver situ\u00e9'+(conserver.length>1?'s':'')+' \u00e0 moins de 50 m d\u2019un '+
@@ -6000,7 +6160,9 @@ function ouvrirDocumentPlan(plan,surPlace){
       : '')+
     'En cas de doute sur le terrain, appelez avant d\u2019abattre.</div>'+
   carteHTML(pts,720,470,marq,(t&&t.ring)||null)+
-  '<div class="leg"><i style="background:#D98A2B"></i>arbre \u00e0 couper, num\u00e9rot\u00e9'+
+  '<div class="leg">'+
+    (nAb?'<i style="background:#D98A2B"></i>\u00e0 abattre':'')+
+    (nEl?'<i style="background:#E3B15E"></i>\u00e0 \u00e9laguer':'')+
     (conserver.length?'<i style="background:#2E6B48"></i>arbre \u00e0 conserver, tout proche':'')+
     (t&&t.ring?'<i style="background:#E8A33D;border-radius:2px"></i>limite du territoire':'')+
     '</div>'+
@@ -6011,9 +6173,15 @@ function ouvrirDocumentPlan(plan,surPlace){
   '<div class="pied">Document \u00e9tabli avec Aff\u00fbt. Les coordonn\u00e9es sont en degr\u00e9s, '+
     'minutes, secondes (WGS 84) : saisissez-les dans un GPS ou un t\u00e9l\u00e9phone pour '+
     'rejoindre chaque sujet.</div>'+
-  '<div class="saut"></div><h1>Fiches par arbre</h1>'+
-  '<div class="sst">Une photo d\u2019ensemble par sujet, prise depuis le sol.</div>'+
-  fiches+
+  '<div class="saut"></div>'+
+  (nAb?'<h1>Arbres \u00e0 abattre</h1>'+
+    '<div class="sst">'+nAb+' sujet'+(nAb>1?'s':'')+
+    ' \u00b7 une photo d\u2019ensemble par arbre, prise depuis le sol.</div>'+
+    fichesAb:'')+
+  (nEl?(nAb?'<div class="saut"></div>':'')+'<h1>Arbres \u00e0 \u00e9laguer</h1>'+
+    '<div class="sst">'+nEl+' sujet'+(nEl>1?'s':'')+
+    ' \u00b7 r\u00e9duction ou mise en s\u00e9curit\u00e9, l\u2019arbre reste sur pied.</div>'+
+    fichesEl:'')+
   '<script>(function(){function k(){'+
     'document.querySelectorAll(".cadre").forEach(function(c){'+
       'var m=c.firstElementChild, l=parseFloat(c.style.getPropertyValue("--l"));'+

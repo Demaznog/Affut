@@ -100,16 +100,32 @@ function dmsCourt(v,pos,neg){
 function ouvrirDocumentPlan(plan,surPlace){
   const abattre=plan.arbres, conserver=plan.garder||[];
   const pts=abattre.map(r=>[r.lat,r.lng]).concat(conserver.map(r=>[r.lat,r.lng]));
-  const marq=abattre.map(r=>({lat:r.lat,lng:r.lng,n:r.n,type:''}))
+  const marq=abattre.map(r=>({lat:r.lat,lng:r.lng,n:r.n,
+      type:(r.action==='elaguer'?'elag':'')}))
     .concat(conserver.map(r=>({lat:r.lat,lng:r.lng,n:'\u2022',type:'garde'})));
   const dat=new Date(plan.date||Date.now());
   const t={nom:plan.titre,dep:plan.dep,ring:plan.ring};
+  const nAb=abattre.filter(r=>r.action==='abattre').length;
+  const nEl=abattre.filter(r=>r.action==='elaguer').length;
+  /* La consigne dit ce qu'il y a reellement a faire : un chantier
+     d'elagage n'est pas un abattage, et les confondre couterait cher. */
+  const consigne = (nAb&&nEl)
+    ? '<b>Deux interventions distinctes.</b> Les pastilles orange fonc\u00e9 d\u00e9signent '+
+      nAb+' arbre'+(nAb>1?'s':'')+' \u00e0 abattre, les pastilles orange clair '+
+      nEl+' arbre'+(nEl>1?'s':'')+' \u00e0 \u00e9laguer \u2014 ceux-l\u00e0 restent sur pied. '
+    : nEl
+    ? '<b>Chantier d\u2019\u00e9lagage.</b> '+(nEl>1
+        ? 'Les '+nEl+' arbres num\u00e9rot\u00e9s sont \u00e0 r\u00e9duire ou \u00e0 mettre en s\u00e9curit\u00e9, '
+        : 'L\u2019arbre num\u00e9rot\u00e9 est \u00e0 r\u00e9duire ou \u00e0 mettre en s\u00e9curit\u00e9, ')+
+      'pas \u00e0 abattre. '
+    : '<b>Coupez uniquement les arbres portant une pastille orange num\u00e9rot\u00e9e.</b> ';
+
   const NOMACT={abattre:'\u00c0 abattre',elaguer:'\u00c0 \u00e9laguer'};
   const NOMETAT={sain:'Sain',deperit:'D\u00e9p\u00e9rissant',dangereux:'Dangereux',mort:'Mort sur pied'};
   const lignes=abattre.map(function(r){
     const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
     return '<tr>'+
-      '<td class="num"><span class="np">'+r.n+'</span></td>'+
+      '<td class="num"><span class="np'+(r.action==='elaguer'?' el':'')+'">'+r.n+'</span></td>'+
       '<td><b>'+esc(r.nom)+'</b><br><i>'+esc(r.latin||'')+'</i></td>'+
       '<td>'+(r.circ?r.circ+' cm<br><span class="pt">\u2300 '+Math.round(r.circ/Math.PI)+' cm</span>':'\u2014')+'</td>'+
       '<td>'+(r.haut?r.haut+' m':'\u2014')+'</td>'+
@@ -118,12 +134,12 @@ function ouvrirDocumentPlan(plan,surPlace){
       '</tr>';
   }).join('');
 
-  const fiches=abattre.map(function(r){
+  const carteFiche=function(r){
     const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
     const mi={n:r.milieu}; const age=r.age?{bas:'',haut:''}:null;
     const mk=r.marq||[];
     return '<div class="fiche">'+
-      '<div class="fh"><span class="fnum">'+r.n+'</span>'+
+      '<div class="fh"><span class="fnum'+(r.action==='elaguer'?' el':'')+'">'+r.n+'</span>'+
         '<span class="ft"><b>'+esc(r.nom)+'</b><span>'+esc(r.latin||'')+'</span></span>'+
         '<span class="fact">'+(A.n||'')+'</span></div>'+
       '<div class="fb">'+
@@ -140,10 +156,13 @@ function ouvrirDocumentPlan(plan,surPlace){
           (mk.length?'<div class="lg"><span>\u00c0 signaler</span><b>'+esc(mk.join(', '))+'</b></div>':'')+
           (r.note?'<div class="lg"><span>Note</span><b>'+esc(r.note)+'</b></div>':'')+
         '</div></div></div>';
-  }).join('');
+  };
+  const fichesAb=abattre.filter(r=>r.action==='abattre').map(carteFiche).join('');
+  const fichesEl=abattre.filter(r=>r.action==='elaguer').map(carteFiche).join('');
 
   const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
-  '<title>Plan de coupe \u2014 '+esc(t?t.nom:'Aff\u00fbt')+'</title><style>'+
+  '<title>'+(nAb&&nEl?'Plan d\u2019intervention':nEl?'Plan d\u2019\u00e9lagage':'Plan de coupe')+
+    ' \u2014 '+esc(t?t.nom:'Aff\u00fbt')+'</title><style>'+
   '@page{size:A4;margin:14mm 13mm}'+
   '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
   'html,body{max-width:100%;overflow-x:hidden}'+
@@ -169,6 +188,7 @@ function ouvrirDocumentPlan(plan,surPlace){
     'border-radius:13px;background:#D98A2B;color:#fff;border:2.5px solid #fff;'+
     'font-size:12pt;font-weight:700;display:flex;align-items:center;justify-content:center;'+
     'box-shadow:0 1px 4px rgba(0,0,0,.5);padding:0 4px}'+
+  '.pin.elag{background:#E3B15E;color:#3A2C10}'+
   '.pin.garde{background:#2E6B48;min-width:16px;height:16px;border-width:2px;font-size:9pt}'+
   '.leg{font-size:9.5pt;color:#5C6B63;margin-bottom:26px}'+
   '.leg i{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 4px 0 12px;'+
@@ -181,6 +201,7 @@ function ouvrirDocumentPlan(plan,surPlace){
     'color:#5C6B63;border-bottom:1.5px solid #16211C;padding:8px 10px}'+
   'td{padding:11px 10px;border-bottom:1px solid #DDD8CC;vertical-align:top}'+
   '.num{padding-left:0;padding-right:0}'+
+  '.np.el{background:#E3B15E;color:#3A2C10}'+
   '.np{display:inline-flex;align-items:center;justify-content:center;'+
     'width:26px;height:26px;border-radius:13px;background:#D98A2B;color:#fff;'+
     'font-weight:700;font-size:12pt}'+
@@ -192,6 +213,7 @@ function ouvrirDocumentPlan(plan,surPlace){
   '.fh{display:flex;align-items:center;gap:12px;background:#F3F1E8;padding:12px 14px}'+
   '.fnum{width:30px;height:30px;border-radius:15px;background:#D98A2B;color:#fff;'+
     'font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}'+
+  '.fnum.el{background:#E3B15E;color:#3A2C10}'+
   '.ft{flex:1}.ft b{display:block;font-size:12pt}.ft span{font-size:9pt;color:#5C6B63;font-style:italic}'+
   '.fact{font-size:9.5pt;font-weight:600;color:#A8392C}'+
   '.fb{display:flex;gap:16px;padding:16px}'+
@@ -225,15 +247,12 @@ function ouvrirDocumentPlan(plan,surPlace){
   'body{padding-bottom:110px}'+
   '@media print{body{padding-bottom:0}}'+
   '</style></head><body>'+
-  '<h1>Plan de coupe</h1>'+
+  '<h1>'+(nAb&&nEl?'Plan d\u2019intervention':nEl?'Plan d\u2019\u00e9lagage':'Plan de coupe')+'</h1>'+
   '<div class="sst">'+esc(t?t.nom:'Toutes les observations')+
     (t&&t.dep?' \u00b7 d\u00e9partement '+esc(t.dep):'')+
-    ' \u00b7 \u00e9tabli le '+fmtDate(dat)+' \u00b7 '+abattre.length+' arbre'+
-    (abattre.length>1?'s':'')+' concern\u00e9'+(abattre.length>1?'s':'')+'</div>'+
-  /* « Ne coupez que » se lit de travers en diagonale : sur un chantier,
-     une affirmation vaut mieux qu'une restriction. */
-  '<div class="bandeau"><b>Coupez uniquement les arbres portant une pastille orange '+
-    'num\u00e9rot\u00e9e.</b> '+
+    ' \u00b7 \u00e9tabli le '+fmtDate(dat)+' \u00b7 '+
+    (nAb?nAb+' \u00e0 abattre':'')+((nAb&&nEl)?', ':'')+(nEl?nEl+' \u00e0 \u00e9laguer':'')+'</div>'+
+  '<div class="bandeau">'+consigne+
     (conserver.length
       ? 'Les points verts signalent '+conserver.length+' arbre'+(conserver.length>1?'s':'')+
         ' \u00e0 conserver situ\u00e9'+(conserver.length>1?'s':'')+' \u00e0 moins de 50 m d\u2019un '+
@@ -241,7 +260,9 @@ function ouvrirDocumentPlan(plan,surPlace){
       : '')+
     'En cas de doute sur le terrain, appelez avant d\u2019abattre.</div>'+
   carteHTML(pts,720,470,marq,(t&&t.ring)||null)+
-  '<div class="leg"><i style="background:#D98A2B"></i>arbre \u00e0 couper, num\u00e9rot\u00e9'+
+  '<div class="leg">'+
+    (nAb?'<i style="background:#D98A2B"></i>\u00e0 abattre':'')+
+    (nEl?'<i style="background:#E3B15E"></i>\u00e0 \u00e9laguer':'')+
     (conserver.length?'<i style="background:#2E6B48"></i>arbre \u00e0 conserver, tout proche':'')+
     (t&&t.ring?'<i style="background:#E8A33D;border-radius:2px"></i>limite du territoire':'')+
     '</div>'+
@@ -252,9 +273,15 @@ function ouvrirDocumentPlan(plan,surPlace){
   '<div class="pied">Document \u00e9tabli avec Aff\u00fbt. Les coordonn\u00e9es sont en degr\u00e9s, '+
     'minutes, secondes (WGS 84) : saisissez-les dans un GPS ou un t\u00e9l\u00e9phone pour '+
     'rejoindre chaque sujet.</div>'+
-  '<div class="saut"></div><h1>Fiches par arbre</h1>'+
-  '<div class="sst">Une photo d\u2019ensemble par sujet, prise depuis le sol.</div>'+
-  fiches+
+  '<div class="saut"></div>'+
+  (nAb?'<h1>Arbres \u00e0 abattre</h1>'+
+    '<div class="sst">'+nAb+' sujet'+(nAb>1?'s':'')+
+    ' \u00b7 une photo d\u2019ensemble par arbre, prise depuis le sol.</div>'+
+    fichesAb:'')+
+  (nEl?(nAb?'<div class="saut"></div>':'')+'<h1>Arbres \u00e0 \u00e9laguer</h1>'+
+    '<div class="sst">'+nEl+' sujet'+(nEl>1?'s':'')+
+    ' \u00b7 r\u00e9duction ou mise en s\u00e9curit\u00e9, l\u2019arbre reste sur pied.</div>'+
+    fichesEl:'')+
   '<script>(function(){function k(){'+
     'document.querySelectorAll(".cadre").forEach(function(c){'+
       'var m=c.firstElementChild, l=parseFloat(c.style.getPropertyValue("--l"));'+
