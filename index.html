@@ -519,13 +519,13 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   background:var(--brume);color:#0F1815;font-family:var(--mono);font-size:10px;font-weight:700;
   display:grid;place-items:center;border:1.5px solid rgba(15,24,21,.5)}
 .mk{position:relative}
-.mk.inter{background:#D98A2B;box-shadow:0 0 0 2px rgba(217,138,43,.35),0 3px 10px rgba(0,0,0,.5)}
+.mk.inter{background:#D98A2B}
 /* Le cercle blanc devient vert sur un arbre qui fructifie : on remplace
    le contour au lieu d'en ajouter un second, la pastille garde sa taille
    et le marqueur reste lisible a 31 px. */
 .mk.gl1{border-color:#7FA86C}
 .mk.gl2{border-color:#4FBE7A}
-.mk.gl3{border-color:#3FD97C;border-width:3.5px;box-shadow:0 0 10px rgba(63,217,124,.5),0 3px 10px rgba(0,0,0,.5)}
+.mk.gl3{border-color:#3FD97C;border-width:3.5px}
 
 .mklab{position:absolute;left:50%;transform:translateX(-50%);top:100%;margin-top:3px;
   font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.02em;
@@ -1112,9 +1112,21 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   <div class="grab"></div>
   <div class="shead"><div style="flex:1"><h2>Filtrer</h2><div class="sub">Carte, journal et bilan</div></div></div>
   <div class="sbody">
+    <div class="seg" id="f-quoi" style="margin-bottom:16px">
+      <button data-q="tout" class="on">Tout</button>
+      <button data-q="faune">Faune</button>
+      <button data-q="arbre">Arbres</button>
+    </div>
     <div class="lab">Période</div><div class="chipgrid" id="f-per"></div>
-    <div class="lab">Nature</div><div class="chipgrid" id="f-kind"></div>
-    <div class="lab">Étiquette</div><div class="chipgrid" id="f-tag"></div>
+    <div id="f-natbloc">
+      <div class="lab">Nature</div><div class="chipgrid" id="f-kind"></div>
+    </div>
+    <div id="f-tagfaune">
+      <div class="lab" id="f-labfaune">Étiquette</div><div class="chipgrid" id="f-tag"></div>
+    </div>
+    <div id="f-tagarbre" style="display:none">
+      <div class="lab">Arbres</div><div class="chipgrid" id="f-tag2"></div>
+    </div>
   </div>
   <div class="sfoot"><button class="big ghost" id="f-reset">Tout</button>
     <button class="big primary" data-close="1">Appliquer</button></div>
@@ -1392,6 +1404,30 @@ const FTAGS_ARBRE=[
       return !!(a&&!a.impossible&&a.centre>=200); }}
 ];
 /* la barre suit la nature filtree : arbres seuls, faune seule, ou les deux */
+/* Le filtre suit la meme logique que le reste : on choisit d'abord ce
+   qu'on regarde, les criteres viennent ensuite. Melanger les etiquettes
+   de faune et d'arbres dans une seule liste ne veut rien dire. */
+function vueFiltre(){
+  const a=FILTER.kinds.has('a');
+  const f=FILTER.kinds.has('o')||FILTER.kinds.has('p')||FILTER.kinds.has('i');
+  return (a&&f)?'tout':a?'arbre':'faune';
+}
+function syncQuoiFiltre(){
+  const v=vueFiltre();
+  $$('#f-quoi button').forEach(b=>b.classList.toggle('on',b.dataset.q===v));
+  const zf=$('#f-tagfaune'), za=$('#f-tagarbre'), zn=$('#f-natbloc');
+  if(zf)zf.style.display=(v!=='arbre')?'block':'none';
+  if(za)za.style.display=(v!=='faune')?'block':'none';
+  /* la nature de fiche n'a de sens que sur la faune : un arbre n'est
+     ni vu, ni preleve, ni indice */
+  if(zn)zn.style.display=(v!=='arbre')?'block':'none';
+  const lf=$('#f-labfaune'); if(lf)lf.textContent=(v==='tout')?'Faune':'\u00c9tiquette';
+  const bf=$('#f-tag'), ba=$('#f-tag2');
+  if(bf)bf.innerHTML=FTAGS.map(t=>'<button class="chip'+(FILTER.tags.has(t)?' on':'')+
+    '" data-t="'+t+'">'+t+'</button>').join('');
+  if(ba)ba.innerHTML=FTAGS_ARBRE.map(x=>'<button class="chip'+(FILTER.tags.has(x.t)?' on':'')+
+    '" data-t="'+x.t+'">'+x.t+'</button>').join('');
+}
 function tagsCourants(){
   const k=FILTER.kinds;
   const arb=k.has('a'), faune=(k.has('o')||k.has('p')||k.has('i'));
@@ -4119,9 +4155,28 @@ const PERIODS=[['today',"Aujourd'hui"],['week','7 derniers jours'],['season','Sa
 const KINDS=[['o','Observations'],['p','Pr\u00e9l\u00e8vements'],['i','Indices'],['a','Arbres']];
 function buildFilter(){
   $('#f-per').innerHTML=PERIODS.map(p=>'<button class="chip" data-p="'+p[0]+'">'+p[1]+'</button>').join('');
-  $('#f-kind').innerHTML=KINDS.map(k=>'<button class="chip" data-kk="'+k[0]+'">'+k[1]+'</button>').join('');
-  $('#f-tag').innerHTML=tagsCourants().map(t=>'<button class="chip" data-t="'+t+'">'+t+'</button>').join('');
+  $('#f-kind').innerHTML=KINDS.filter(k=>k[0]!=='a')
+    .map(k=>'<button class="chip" data-kk="'+k[0]+'">'+k[1]+'</button>').join('');
+  syncQuoiFiltre();
   $('#f-per').onclick=e=>{const b=e.target.closest('[data-p]');if(!b)return;FILTER.period=b.dataset.p;syncFilter();renderAll()};
+  $('#f-quoi').onclick=e=>{
+    const b=e.target.closest('[data-q]'); if(!b)return;
+    const v=b.dataset.q;
+    FILTER.kinds = v==='arbre' ? new Set(['a'])
+                 : v==='faune' ? new Set(['o','p','i'])
+                 : new Set(['o','p','i','a']);
+    /* on retire les etiquettes devenues sans objet */
+    const noms=(v==='arbre'?FTAGS_ARBRE.map(x=>x.t)
+              : v==='faune'?FTAGS
+              : FTAGS.concat(FTAGS_ARBRE.map(x=>x.t)));
+    Array.from(FILTER.tags).forEach(x=>{if(noms.indexOf(x)<0)FILTER.tags.delete(x)});
+    ST.voirAbattus=FILTER.tags.has('Abattus');
+    syncFilter(); renderAll();
+  };
+  $('#f-tag2').onclick=e=>{const b=e.target.closest('[data-t]');if(!b)return;const t=b.dataset.t;
+    FILTER.tags.has(t)?FILTER.tags.delete(t):FILTER.tags.add(t);
+    ST.voirAbattus=FILTER.tags.has('Abattus');
+    syncFilter();renderAll()};
   $('#f-kind').onclick=e=>{const b=e.target.closest('[data-kk]');if(!b)return;const k=b.dataset.kk;
     FILTER.kinds.has(k)?FILTER.kinds.delete(k):FILTER.kinds.add(k);if(!FILTER.kinds.size)FILTER.kinds.add(k);
     /* les etiquettes suivent : celles qui n'ont plus cours sont retirees */
@@ -4142,6 +4197,7 @@ function syncFilter(){
   $$('#f-kind [data-kk]').forEach(b=>b.classList.toggle('on',FILTER.kinds.has(b.dataset.kk)));
   $$('#f-tag [data-t]').forEach(b=>b.classList.toggle('on',FILTER.tags.has(b.dataset.t)));
   $('#t-filter').classList.toggle('act',FILTER.period!=='all'||FILTER.kinds.size<4||FILTER.tags.size>0);
+  syncQuoiFiltre();
   syncPortee();
 }
 function buildLayer(){
@@ -4591,7 +4647,7 @@ $('#st-quoi').onclick=function(e){
   ST.vueBilan=b.dataset.s; save(); renderStats();
 };
 $('#t-filter').onclick=()=>openSheet('#sh-filter');
-const COURT={ign_ortho:'SAT',esri:'SAT',ign_plan:'PLAN',ign_scan:'1:25',osm:'OSM',topo:'TOPO'};
+const COURT={ign_ortho:'MAP',esri:'MAP',ign_plan:'PLAN',ign_scan:'1:25',osm:'OSM',topo:'TOPO'};
 function syncLayerBtn(){
   const c=COURT[aBase]||'FOND';
   $('#t-layer').innerHTML='<span class="lb">'+c+'</span>'+
