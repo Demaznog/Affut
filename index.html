@@ -228,6 +228,10 @@ button:active{transform:scale(.965)}
 .mbrole{display:inline-block;font-size:12.5px;color:var(--brume-2);
   padding:6px 12px;border-radius:11px;background:var(--anthracite-2);border:1px solid var(--trait)}
 body.attente{opacity:.5}
+.apercu{background:var(--anthracite-2);border:1px solid var(--trait);border-radius:14px;
+  padding:12px 14px;margin-bottom:10px;font-size:13.5px;line-height:1.5;
+  white-space:pre-line;color:var(--brume)}
+.lienbleu{color:#7FB8D6;text-decoration:underline}
 .chn{flex:none;width:26px;height:26px;border-radius:13px;background:#D98A2B;color:#fff;
   font-weight:700;font-size:13px;display:grid;place-items:center}
 .chn.el{background:#E3B15E;color:#3A2C10}
@@ -814,6 +818,8 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div class="sub" id="lp-sous">—</div></div>
     <button class="link" data-close="1">Fermer</button></div>
   <div class="sbody">
+    <div class="apercu"><span id="lp-apercu">—</span>
+      <a href="#" id="lp-vu" class="lienbleu">le lien</a></div>
     <input type="text" id="lp-lien" readonly>
     <div class="chipgrid" style="margin-top:10px">
       <button class="chip" id="lp-copier">Copier</button>
@@ -1197,8 +1203,11 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   <div class="shead"><div style="flex:1"><h2 id="d-title">Fiche</h2><div class="sub mono" id="d-meta">—</div></div>
     <button class="link" data-close="1">Fermer</button></div>
   <div class="sbody"><div id="d-body"></div></div>
-  <div class="sfoot"><button class="big ghost" id="d-del" style="flex:0 0 108px;color:#D9705F">Supprimer</button>
-    <button class="big primary" id="d-edit">Modifier</button></div>
+  <div class="sfoot" style="flex-wrap:wrap;gap:8px">
+    <button class="big ghost" id="d-print" style="flex:1 1 46%">Imprimer</button>
+    <button class="big ghost" id="d-share" style="flex:1 1 46%">Envoyer un lien</button>
+    <button class="big ghost" id="d-del" style="flex:0 0 108px;color:#D9705F">Supprimer</button>
+    <button class="big primary" id="d-edit" style="flex:1">Modifier</button></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -5879,6 +5888,205 @@ async function composerPlan(opt){
     arbres:liste, garder:conserver.map(r=>({lat:r.lat,lng:r.lng}))};
 }
 
+/* Style et mise a l'echelle communs aux documents imprimables. */
+const STYLE_DOC=
+  '@page{size:A4;margin:14mm 13mm}'+
+  '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+  'html,body{max-width:100%;overflow-x:hidden}'+
+  'img,table{max-width:100%}'+
+  'body{margin:0;padding:20px 18px;font-family:-apple-system,BlinkMacSystemFont,'+
+    '"Helvetica Neue",Arial,sans-serif;color:#16211C;font-size:11pt;line-height:1.5;'+
+    'max-width:820px;margin-left:auto;margin-right:auto}'+
+  '@media print{body{padding:0;max-width:none}}'+
+  'h1{font-size:20pt;margin:0 0 4px;letter-spacing:-.02em;line-height:1.15}'+
+  '.sst{color:#5C6B63;font-size:10pt;margin-bottom:18px}'+
+  '.bandeau{background:#F3F1E8;border-left:4px solid #C15346;padding:14px 16px;'+
+    'border-radius:0 10px 10px 0;margin:14px 0 22px;font-size:10.5pt;line-height:1.55}'+
+  '.bandeau b{color:#A8392C}'+
+  '.cadre{position:relative;width:100%;margin:0 0 12px;overflow:hidden;'+
+    'border-radius:10px;background:#DDD;'+
+    'aspect-ratio:calc(var(--l)) / calc(var(--h))}'+
+  '.carte{position:absolute;left:0;top:0;transform-origin:0 0}'+
+  '@media print{.cadre{aspect-ratio:auto;height:auto}'+
+    '.carte{position:relative;transform:none}}'+
+  '.tu{position:absolute;width:256px;height:256px;display:block}'+
+  '.ov{position:absolute;left:0;top:0}'+
+  '.pin{position:absolute;transform:translate(-50%,-50%);min-width:26px;height:26px;'+
+    'border-radius:13px;background:#D98A2B;color:#fff;border:2.5px solid #fff;'+
+    'font-size:12pt;font-weight:700;display:flex;align-items:center;justify-content:center;'+
+    'box-shadow:0 1px 4px rgba(0,0,0,.5);padding:0 4px}'+
+  '.pin.elag{background:#E3B15E;color:#3A2C10}'+
+  '.pin.garde{background:#2E6B48;min-width:16px;height:16px;border-width:2px;font-size:9pt}'+
+  '.leg{font-size:9.5pt;color:#5C6B63;margin-bottom:26px}'+
+  '.leg i{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 4px 0 12px;'+
+    'vertical-align:-1px}'+
+  'table{width:100%;border-collapse:collapse;font-size:10pt;table-layout:fixed}'+
+  'td,th{overflow-wrap:anywhere;hyphens:auto}'+
+  'col.c1{width:9%}col.c2{width:27%}col.c3{width:14%}'+
+  'col.c4{width:9%}col.c5{width:19%}col.c6{width:22%}'+
+  'th{text-align:left;font-size:8.5pt;text-transform:uppercase;letter-spacing:.05em;'+
+    'color:#5C6B63;border-bottom:1.5px solid #16211C;padding:8px 10px}'+
+  'td{padding:11px 10px;border-bottom:1px solid #DDD8CC;vertical-align:top}'+
+  '.num{padding-left:0;padding-right:0}'+
+  '.np.el{background:#E3B15E;color:#3A2C10}'+
+  '.np{display:inline-flex;align-items:center;justify-content:center;'+
+    'width:26px;height:26px;border-radius:13px;background:#D98A2B;color:#fff;'+
+    'font-weight:700;font-size:12pt}'+
+  '.pt{color:#5C6B63;font-size:9pt}'+
+  '.gps{font-family:ui-monospace,Menlo,monospace;font-size:8.5pt;letter-spacing:-.02em}'+
+  'i{color:#5C6B63;font-size:9pt}'+
+  '.fiche{break-inside:avoid;page-break-inside:avoid;border:1px solid #DDD8CC;'+
+    'border-radius:12px;margin-bottom:18px;overflow:hidden}'+
+  '.fh{display:flex;align-items:center;gap:12px;background:#F3F1E8;padding:12px 14px}'+
+  '.fnum{width:30px;height:30px;border-radius:15px;background:#D98A2B;color:#fff;'+
+    'font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}'+
+  '.fnum.el{background:#E3B15E;color:#3A2C10}'+
+  '.ft{flex:1}.ft b{display:block;font-size:12pt}.ft span{font-size:9pt;color:#5C6B63;font-style:italic}'+
+  '.fact{font-size:9.5pt;font-weight:600;color:#A8392C}'+
+  '.fb{display:flex;gap:16px;padding:16px}'+
+  '.fp{width:150px;height:150px;object-fit:cover;border-radius:8px;flex:none;background:#EEE}'+
+  '@media screen and (max-width:560px){'+
+    '.fb{flex-direction:column;gap:12px}'+
+    '.fp{width:100%;height:180px}'+
+    '.fd{grid-template-columns:1fr 1fr}'+
+    'table{font-size:9pt}'+
+    'td,th{padding:9px 5px;font-size:8.5pt}'+
+    '.np{width:22px;height:22px;font-size:10pt}'+
+  '}'+
+  '.fp.vide{display:flex;align-items:center;justify-content:center;color:#9AA49E;font-size:9pt}'+
+  '.fd{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:11px 18px;align-content:start}'+
+  '.fd>div{border-bottom:1px solid #EEE9DE;padding-bottom:7px}'+
+  '.fd .lg{grid-column:1/-1}'+
+  '.fd span{display:block;font-size:8pt;text-transform:uppercase;letter-spacing:.04em;color:#5C6B63}'+
+  '.fd b{font-size:10.5pt;font-weight:600}'+
+  '.pied{margin-top:24px;padding-top:14px;border-top:1px solid #DDD8CC;'+
+    'font-size:9pt;color:#5C6B63;line-height:1.55}'+
+  '.saut{page-break-before:always;height:26px}'+
+  '.fgrande{width:100%;max-height:340px;object-fit:cover;border-radius:10px;margin:4px 0 14px}'+
+  '.cle{color:#5C6B63;font-size:9.5pt;width:42%}'+
+  '.lab2{font-size:8.5pt;text-transform:uppercase;letter-spacing:.05em;color:#5C6B63;'+
+    'margin:20px 0 6px}'+
+  '.note2{font-size:11pt;line-height:1.55;background:#F3F1E8;padding:12px 14px;'+
+    'border-radius:10px}'+
+  '@media print{.noimp{display:none}}'+
+  '.noimp{position:fixed;left:0;right:0;bottom:0;background:#16211C;'+
+    'padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:12px;'+
+    'box-shadow:0 -4px 20px rgba(0,0,0,.35)}'+
+  /* Boutons dimensionnes pour le terrain : des doigts froids, des gants,
+     un ecran mouille. On vise 60 px de haut, bien au-dela du minimum. */
+  '.noimp button{flex:1;background:#7FB8D6;color:#0F1815;border:0;border-radius:16px;'+
+    'padding:20px 14px;font-size:17.5px;font-weight:650;line-height:1.25;'+
+    'min-height:62px;font-family:inherit;cursor:pointer;'+
+    '-webkit-tap-highlight-color:transparent}'+
+  '.noimp button.sec{flex:0 0 34%;background:transparent;color:#fff;'+
+    'border:1.5px solid rgba(255,255,255,.42)}'+
+  '@media screen and (max-width:400px){'+
+    '.noimp button{font-size:16px;padding:20px 8px}'+
+    '.noimp button.sec{flex:0 0 30%}}'+
+  'body{padding-bottom:124px}'+
+  '@media print{body{padding-bottom:0}}';
+const SCRIPT_ECHELLE=
+  '<script>(function(){function k(){'+
+    'document.querySelectorAll(".cadre").forEach(function(c){'+
+      'var m=c.firstElementChild, l=parseFloat(c.style.getPropertyValue("--l"));'+
+      'var r=c.clientWidth/l; m.style.transform="scale("+r+")";});}'+
+    'k();addEventListener("resize",k);addEventListener("orientationchange",k);'+
+    'addEventListener("beforeprint",function(){'+
+      'document.querySelectorAll(".carte").forEach(function(m){m.style.transform="none"})});'+
+    'addEventListener("afterprint",k);})();<\/script>';
+
+/* ---------------------------------------------------------------
+   PARTAGE D'UNE FICHE
+   Un arbre remarquable qu'on veut montrer, une observation qu'on veut
+   transmettre a un naturaliste ou a la federation : le meme mecanisme
+   que le plan de coupe, reduit a un seul sujet.
+--------------------------------------------------------------- */
+async function composerFiche(id){
+  const r=ST.recs.find(x=>x.id===id); if(!r)return null;
+  const sp=SP[r.sp]||{nom:r.sp,latin:''};
+  const t=ST.terr.find(x=>x.id===r.terr);
+  const arb=(r.kind==='a');
+  const o={type:'fiche', arbre:arb,
+    titre:sp.nom, latin:sp.latin||'', categorie:sp.categorie_nom||'',
+    lat:r.lat, lng:r.lng, date:r.t, terr:(t?t.nom:null), dep:(t&&t.dep)||null,
+    note:r.note||'', auteur:r.auteur_nom||null, ring:(t&&t.ring)||null,
+    nature:(r.kind==='p'?'Pr\u00e9l\u00e8vement':r.kind==='i'?'Indice':
+            arb?'Arbre remarquable':'Observation'),
+    lignes:[], img:null};
+  const p=(r.photos||[]).find(x=>x.role==='ensemble');
+  if(p)o.img=p.chemin?((await urlPhoto(p.chemin,604800))||p.vignette):p.vignette;
+  const add=(k,v)=>{ if(v!==null&&v!==undefined&&v!=='')o.lignes.push([k,String(v)]) };
+  if(arb){
+    const mi=(MILIEUX.find(m=>m.k===r.milieu)||{});
+    const a=ageArbre(r.sp,r.circ,mi.f,r.mes,r.cernes);
+    add('Circonf\u00e9rence',r.circ?r.circ+' cm':null);
+    add('Diam\u00e8tre',r.circ?Math.round(r.circ/Math.PI)+' cm':null);
+    add('Hauteur',r.haut?r.haut+' m':null);
+    add('\u00c2ge estim\u00e9',(a&&!a.impossible)?a.bas+'\u2013'+a.haut+' ans':null);
+    add('Milieu',mi.n||null);
+    add('Port',(PORTS.find(x=>x.k===r.port)||{}).n||null);
+    add('\u00c9tat',(ETATS.find(x=>x.k===r.etat)||{}).n||null);
+    add('Intervention',(ACTIONS.find(x=>x.k===r.action)||{}).n||null);
+    const mk=(r.marq||[]).map(k=>(MARQUEURS.find(y=>y.k===k)||{}).n).filter(Boolean);
+    add('Marqueurs',mk.length?mk.join(', '):null);
+    const an=new Date().getFullYear();
+    const fr=fructAnnee(r,an)||fructAnnee(r,an-1);
+    add('Fructification',fr?((NIVEAUX.find(n=>n.k===fr)||{}).n||''):null);
+    if(r.mes&&r.mes.length>1){
+      const ob=accroissementObserve(r.mes);
+      if(ob&&!ob.nul)add('Croissance mesur\u00e9e',ob.a.toFixed(2)+' cm par an sur '+
+        ob.ans.toFixed(1)+' ans');
+    }
+  }else{
+    add('Effectif',totalOf(r)||null);
+    const set=clsOf(r.sp), c=r.comp||{};
+    const det=(set||[]).map(function(x){ const n=c[x.k]; return n?n+' '+(n>1?x.p:x.s).toLowerCase():null })
+      .filter(Boolean);
+    add('Composition',det.length?det.join(', '):null);
+    add('Poids',r.poids?r.poids+' kg':null);
+    add('Lune',r.lune?r.lune+(r.lunep!=null?' \u00b7 '+r.lunep+'\u2009%':''):null);
+    add('Lever du soleil',r.lever||null);
+    add('Coucher',r.coucher||null);
+    if(r.meteo){ const m=r.meteo;
+      add('M\u00e9t\u00e9o',[m.temp!=null?m.temp+'\u2009\u00b0C':null,
+        m.vent!=null?'vent '+m.vent+' km/h':null, m.dir||null].filter(Boolean).join(', ')||null); }
+  }
+  return o;
+}
+function ouvrirDocumentFiche(f,surPlace){
+  const dat=new Date(f.date||Date.now());
+  const carte=carteHTML([[f.lat,f.lng]],720,400,
+    [{lat:f.lat,lng:f.lng,n:'\u25cf',type:''}],f.ring);
+  const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
+  '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'+
+  '<title>'+esc(f.titre)+' \u2014 Aff\u00fbt</title><style>'+
+  STYLE_DOC+
+  '</style></head><body>'+
+  '<h1>'+esc(f.titre)+'</h1>'+
+  '<div class="sst"><i>'+esc(f.latin||'')+'</i>'+(f.latin?' \u00b7 ':'')+
+    esc(f.nature)+' \u00b7 '+fmtDate(dat)+
+    (f.terr?' \u00b7 '+esc(f.terr):'')+'</div>'+
+  (f.img?'<img class="fgrande" src="'+f.img+'">':'')+
+  carte+
+  '<div class="leg">'+dmsCourt(f.lat,'N','S')+'   '+dmsCourt(f.lng,'E','O')+'</div>'+
+  (f.lignes.length
+    ? '<table><tbody>'+f.lignes.map(l=>'<tr><td class="cle">'+esc(l[0])+'</td>'+
+      '<td><b>'+esc(l[1])+'</b></td></tr>').join('')+'</tbody></table>'
+    : '')+
+  (f.note?'<div class="lab2">Note</div><div class="note2">'+esc(f.note)+'</div>':'')+
+  '<div class="pied">Fiche \u00e9tablie avec Aff\u00fbt'+
+    (f.auteur?' \u00b7 observ\u00e9 par '+esc(f.auteur):'')+
+    '. Coordonn\u00e9es en degr\u00e9s, minutes, secondes (WGS 84).</div>'+
+  SCRIPT_ECHELLE+
+  '<div class="noimp"><button class="sec" onclick="window.close()">Fermer</button>'+
+    '<button onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>'+
+  '</body></html>';
+  if(surPlace){ document.open(); document.write(doc); document.close(); return }
+  const w=window.open('','_blank');
+  if(!w){toast('Autorisez les fen\u00eatres');return}
+  w.document.open(); w.document.write(doc); w.document.close();
+}
+
 /* ---------- lien de partage ---------- */
 function jetonPlan(){
   const a='abcdefghijkmnpqrstuvwxyz23456789';
@@ -5886,6 +6094,40 @@ function jetonPlan(){
   for(let i=0;i<32;i++)j+=a[Math.floor(Math.random()*a.length)];
   return j;
 }
+async function partagerFiche(id){
+  if(!sbPret()){toast('Rejoignez une \u00e9quipe pour partager un lien');return}
+  toast('Pr\u00e9paration du lien\u2026');
+  const f=await composerFiche(id);
+  if(!f){toast('Fiche introuvable');return}
+  const jeton=jetonPlan();
+  try{
+    const {error}=await sb.from('plan').insert({jeton:jeton,equipe_id:ST.equipe.id,
+      titre:f.titre,donnees:f});
+    if(error)throw error;
+  }catch(e){ toast('Lien non cr\u00e9\u00e9 : '+(e.message||'')); return }
+  const base=location.pathname.replace(/[^/]*$/,'');
+  lpTitre=f.titre+' \u2014 Aff\u00fbt';
+  /* « Fiche observation : Sanglier » sonne administratif ; on dit ce
+     qui s'est passe. */
+  lpTexte=(f.arbre
+    ? 'Fiche arbre \u2014 '+f.titre+(f.latin?' ('+f.latin+')':'')
+    : f.titre+' '+(f.nature==='Pr\u00e9l\u00e8vement'?'pr\u00e9lev\u00e9':
+        f.nature==='Indice'?'\u2014 indice de pr\u00e9sence':'observ\u00e9'))+
+    (f.terr?' \u00b7 '+f.terr:'')+
+    '\nPhoto, '+(f.arbre?'mesures':'d\u00e9tails')+' et rep\u00e8res GPS :';
+  $('#lp-lien').value=location.origin+base+'plan.html#plan='+jeton;
+  $('#lp-sous').textContent=f.titre+' \u00b7 valable 90 jours';
+  $('#lp-apercu').textContent=lpTexte;
+  openSheet('#sh-lien');
+}
+$('#d-print').onclick=async function(){
+  if(!editing)return;
+  toast('Pr\u00e9paration\u2026');
+  const f=await composerFiche(editing);
+  if(f)ouvrirDocumentFiche(f);
+};
+$('#d-share').onclick=function(){ if(editing)partagerFiche(editing) };
+
 async function partagerPlan(opt){
   if(!sbPret()){toast('Rejoignez une \u00e9quipe pour partager un lien');return}
   if(refusLecture())return;
@@ -5902,9 +6144,18 @@ async function partagerPlan(opt){
      depuis un lien destine a un tiers */
   const base=location.pathname.replace(/[^/]*$/,'');
   const lien=location.origin+base+'plan.html#plan='+jeton;
+  const nAb=plan.arbres.filter(r=>r.action==='abattre').length;
+  const nEl=plan.arbres.filter(r=>r.action==='elaguer').length;
+  lpTitre=titrePlan(nAb,nEl);
+  lpTexte=lpTitre+' \u2014 '+plan.titre+'\n'+
+    (nAb?nAb+' arbre'+(nAb>1?'s':'')+' \u00e0 abattre':'')+
+    ((nAb&&nEl)?', ':'')+
+    (nEl?nEl+' arbre'+(nEl>1?'s':'')+' \u00e0 \u00e9laguer':'')+
+    '. Carte, rep\u00e8res GPS et photos :';
   $('#lp-lien').value=lien;
-  $('#lp-sous').textContent=plan.arbres.length+' arbre'+
+  $('#lp-sous').textContent=lpTitre+' \u00b7 '+plan.arbres.length+' arbre'+
     (plan.arbres.length>1?'s':'')+' \u00b7 valable 90 jours';
+  $('#lp-apercu').textContent=lpTexte;
   openSheet('#sh-lien');
 }
 $('#lp-copier').onclick=async function(){
@@ -5912,10 +6163,18 @@ $('#lp-copier').onclick=async function(){
   try{ await navigator.clipboard.writeText(v); toast('Lien copi\u00e9') }
   catch(e){ $('#lp-lien').select(); toast('S\u00e9lectionnez et copiez') }
 };
+/* Le destinataire doit savoir ce qu'il ouvre avant de cliquer : un plan
+   d'abattage et une fiche d'observation n'appellent pas la meme reaction. */
+let lpTitre='Aff\u00fbt', lpTexte='';
+function titrePlan(nAb,nEl){
+  return (nAb&&nEl)?'Plan d\u2019intervention'
+       : nEl?'Plan d\u2019\u00e9lagage'
+       : 'Plan de coupe';
+}
 $('#lp-envoyer').onclick=function(){
   const v=$('#lp-lien').value;
-  const txt='Plan de coupe \u2014 '+($('#lp-sous').textContent||'')+'\n'+v;
-  if(navigator.share){ navigator.share({title:'Plan de coupe',text:txt}).catch(function(){}) }
+  const txt=lpTexte+'\n'+v;
+  if(navigator.share){ navigator.share({title:lpTitre,text:txt}).catch(function(){}) }
   else location.href='https://wa.me/?text='+encodeURIComponent(txt);
 };
 
@@ -6063,89 +6322,7 @@ function ouvrirDocumentPlan(plan,surPlace){
   const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
   '<title>'+(nAb&&nEl?'Plan d\u2019intervention':nEl?'Plan d\u2019\u00e9lagage':'Plan de coupe')+
     ' \u2014 '+esc(t?t.nom:'Aff\u00fbt')+'</title><style>'+
-  '@page{size:A4;margin:14mm 13mm}'+
-  '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
-  'html,body{max-width:100%;overflow-x:hidden}'+
-  'img,table{max-width:100%}'+
-  'body{margin:0;padding:20px 18px;font-family:-apple-system,BlinkMacSystemFont,'+
-    '"Helvetica Neue",Arial,sans-serif;color:#16211C;font-size:11pt;line-height:1.5;'+
-    'max-width:820px;margin-left:auto;margin-right:auto}'+
-  '@media print{body{padding:0;max-width:none}}'+
-  'h1{font-size:20pt;margin:0 0 4px;letter-spacing:-.02em;line-height:1.15}'+
-  '.sst{color:#5C6B63;font-size:10pt;margin-bottom:18px}'+
-  '.bandeau{background:#F3F1E8;border-left:4px solid #C15346;padding:14px 16px;'+
-    'border-radius:0 10px 10px 0;margin:14px 0 22px;font-size:10.5pt;line-height:1.55}'+
-  '.bandeau b{color:#A8392C}'+
-  '.cadre{position:relative;width:100%;margin:0 0 12px;overflow:hidden;'+
-    'border-radius:10px;background:#DDD;'+
-    'aspect-ratio:calc(var(--l)) / calc(var(--h))}'+
-  '.carte{position:absolute;left:0;top:0;transform-origin:0 0}'+
-  '@media print{.cadre{aspect-ratio:auto;height:auto}'+
-    '.carte{position:relative;transform:none}}'+
-  '.tu{position:absolute;width:256px;height:256px;display:block}'+
-  '.ov{position:absolute;left:0;top:0}'+
-  '.pin{position:absolute;transform:translate(-50%,-50%);min-width:26px;height:26px;'+
-    'border-radius:13px;background:#D98A2B;color:#fff;border:2.5px solid #fff;'+
-    'font-size:12pt;font-weight:700;display:flex;align-items:center;justify-content:center;'+
-    'box-shadow:0 1px 4px rgba(0,0,0,.5);padding:0 4px}'+
-  '.pin.elag{background:#E3B15E;color:#3A2C10}'+
-  '.pin.garde{background:#2E6B48;min-width:16px;height:16px;border-width:2px;font-size:9pt}'+
-  '.leg{font-size:9.5pt;color:#5C6B63;margin-bottom:26px}'+
-  '.leg i{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 4px 0 12px;'+
-    'vertical-align:-1px}'+
-  'table{width:100%;border-collapse:collapse;font-size:10pt;table-layout:fixed}'+
-  'td,th{overflow-wrap:anywhere;hyphens:auto}'+
-  'col.c1{width:9%}col.c2{width:27%}col.c3{width:14%}'+
-  'col.c4{width:9%}col.c5{width:19%}col.c6{width:22%}'+
-  'th{text-align:left;font-size:8.5pt;text-transform:uppercase;letter-spacing:.05em;'+
-    'color:#5C6B63;border-bottom:1.5px solid #16211C;padding:8px 10px}'+
-  'td{padding:11px 10px;border-bottom:1px solid #DDD8CC;vertical-align:top}'+
-  '.num{padding-left:0;padding-right:0}'+
-  '.np.el{background:#E3B15E;color:#3A2C10}'+
-  '.np{display:inline-flex;align-items:center;justify-content:center;'+
-    'width:26px;height:26px;border-radius:13px;background:#D98A2B;color:#fff;'+
-    'font-weight:700;font-size:12pt}'+
-  '.pt{color:#5C6B63;font-size:9pt}'+
-  '.gps{font-family:ui-monospace,Menlo,monospace;font-size:8.5pt;letter-spacing:-.02em}'+
-  'i{color:#5C6B63;font-size:9pt}'+
-  '.fiche{break-inside:avoid;page-break-inside:avoid;border:1px solid #DDD8CC;'+
-    'border-radius:12px;margin-bottom:18px;overflow:hidden}'+
-  '.fh{display:flex;align-items:center;gap:12px;background:#F3F1E8;padding:12px 14px}'+
-  '.fnum{width:30px;height:30px;border-radius:15px;background:#D98A2B;color:#fff;'+
-    'font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}'+
-  '.fnum.el{background:#E3B15E;color:#3A2C10}'+
-  '.ft{flex:1}.ft b{display:block;font-size:12pt}.ft span{font-size:9pt;color:#5C6B63;font-style:italic}'+
-  '.fact{font-size:9.5pt;font-weight:600;color:#A8392C}'+
-  '.fb{display:flex;gap:16px;padding:16px}'+
-  '.fp{width:150px;height:150px;object-fit:cover;border-radius:8px;flex:none;background:#EEE}'+
-  '@media screen and (max-width:560px){'+
-    '.fb{flex-direction:column;gap:12px}'+
-    '.fp{width:100%;height:180px}'+
-    '.fd{grid-template-columns:1fr 1fr}'+
-    'table{font-size:9pt}'+
-    'td,th{padding:9px 5px;font-size:8.5pt}'+
-    '.np{width:22px;height:22px;font-size:10pt}'+
-  '}'+
-  '.fp.vide{display:flex;align-items:center;justify-content:center;color:#9AA49E;font-size:9pt}'+
-  '.fd{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:11px 18px;align-content:start}'+
-  '.fd>div{border-bottom:1px solid #EEE9DE;padding-bottom:7px}'+
-  '.fd .lg{grid-column:1/-1}'+
-  '.fd span{display:block;font-size:8pt;text-transform:uppercase;letter-spacing:.04em;color:#5C6B63}'+
-  '.fd b{font-size:10.5pt;font-weight:600}'+
-  '.pied{margin-top:24px;padding-top:14px;border-top:1px solid #DDD8CC;'+
-    'font-size:9pt;color:#5C6B63;line-height:1.55}'+
-  '.saut{page-break-before:always;height:26px}'+
-  '@media print{.noimp{display:none}}'+
-  '.noimp{position:fixed;left:0;right:0;bottom:0;background:#16211C;'+
-    'padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:12px;'+
-    'box-shadow:0 -4px 20px rgba(0,0,0,.35)}'+
-  '.noimp button{flex:1;background:#7FB8D6;color:#0F1815;border:0;border-radius:14px;'+
-    'padding:18px 16px;font-size:16px;font-weight:650;line-height:1.2;'+
-    'font-family:inherit;cursor:pointer}'+
-  '.noimp button.sec{flex:0 0 40%;background:transparent;color:#fff;'+
-    'border:1.5px solid rgba(255,255,255,.4)}'+
-  'body{padding-bottom:110px}'+
-  '@media print{body{padding-bottom:0}}'+
+  STYLE_DOC+
   '</style></head><body>'+
   '<h1>'+(nAb&&nEl?'Plan d\u2019intervention':nEl?'Plan d\u2019\u00e9lagage':'Plan de coupe')+'</h1>'+
   '<div class="sst">'+esc(t?t.nom:'Toutes les observations')+
@@ -6182,22 +6359,12 @@ function ouvrirDocumentPlan(plan,surPlace){
     '<div class="sst">'+nEl+' sujet'+(nEl>1?'s':'')+
     ' \u00b7 r\u00e9duction ou mise en s\u00e9curit\u00e9, l\u2019arbre reste sur pied.</div>'+
     fichesEl:'')+
-  '<script>(function(){function k(){'+
-    'document.querySelectorAll(".cadre").forEach(function(c){'+
-      'var m=c.firstElementChild, l=parseFloat(c.style.getPropertyValue("--l"));'+
-      'var r=c.clientWidth/l; m.style.transform="scale("+r+")";});}'+
-    'k();addEventListener("resize",k);addEventListener("orientationchange",k);'+
-    'addEventListener("beforeprint",function(){'+
-      'document.querySelectorAll(".carte").forEach(function(m){m.style.transform="none"})});'+
-    'addEventListener("afterprint",k);})();<\/script>'+
+  SCRIPT_ECHELLE+
   '<div class="noimp"><button class="sec" onclick="window.close()">Fermer</button>'+
     '<button onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>'+
   '</body></html>';
 
-  if(surPlace){
-    document.open(); document.write(doc); document.close();
-    return;
-  }
+  if(surPlace){ document.open(); document.write(doc); document.close(); return }
   const w=window.open('','_blank');
   if(!w){toast('Autorisez les fen\u00eatres pour ouvrir le plan');return}
   w.document.open(); w.document.write(doc); w.document.close();

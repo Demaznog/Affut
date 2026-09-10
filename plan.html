@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Plan de coupe</title>
+<title>Affût</title>
 <style>
 body{margin:0;background:#0F1815;color:#F4F3EA;min-height:100vh;
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
@@ -10,7 +10,7 @@ body{margin:0;background:#0F1815;color:#F4F3EA;min-height:100vh;
 .err h1{font-size:22px;margin:0 0 10px;letter-spacing:-.02em}
 .err p{color:#96AAA0;line-height:1.6;font-size:15px}
 </style></head>
-<body><div class="att" id="a">Chargement du plan\u2026</div>
+<body><div class="att" id="a">Chargement\u2026</div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 
@@ -19,6 +19,7 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>
 const MOIS=['janv.','f\u00e9vr.','mars','avril','mai','juin','juil.','ao\u00fbt',
   'sept.','oct.','nov.','d\u00e9c.'];
 const fmtDate=d=>d.getDate()+' '+MOIS[d.getMonth()]+' '+d.getFullYear();
+const toast=()=>{};
 const SB_URL='https://uryqxqebuhpkdquxlela.supabase.co';
 const SB_CLE='sb_publishable_xxMjr_BR1bIGAufAylK5EA_rZY-VVbo';
 
@@ -97,72 +98,64 @@ function dmsCourt(v,pos,neg){
   return d+'\u00b0'+String(m).padStart(2,'0')+'\u2032'+sec+'\u2033'+s;
 }
 
-function ouvrirDocumentPlan(plan,surPlace){
-  const abattre=plan.arbres, conserver=plan.garder||[];
-  const pts=abattre.map(r=>[r.lat,r.lng]).concat(conserver.map(r=>[r.lat,r.lng]));
-  const marq=abattre.map(r=>({lat:r.lat,lng:r.lng,n:r.n,
-      type:(r.action==='elaguer'?'elag':'')}))
-    .concat(conserver.map(r=>({lat:r.lat,lng:r.lng,n:'\u2022',type:'garde'})));
-  const dat=new Date(plan.date||Date.now());
-  const t={nom:plan.titre,dep:plan.dep,ring:plan.ring};
-  const nAb=abattre.filter(r=>r.action==='abattre').length;
-  const nEl=abattre.filter(r=>r.action==='elaguer').length;
-  /* La consigne dit ce qu'il y a reellement a faire : un chantier
-     d'elagage n'est pas un abattage, et les confondre couterait cher. */
-  const consigne = (nAb&&nEl)
-    ? '<b>Deux interventions distinctes.</b> Les pastilles orange fonc\u00e9 d\u00e9signent '+
-      nAb+' arbre'+(nAb>1?'s':'')+' \u00e0 abattre, les pastilles orange clair '+
-      nEl+' arbre'+(nEl>1?'s':'')+' \u00e0 \u00e9laguer \u2014 ceux-l\u00e0 restent sur pied. '
-    : nEl
-    ? '<b>Chantier d\u2019\u00e9lagage.</b> '+(nEl>1
-        ? 'Les '+nEl+' arbres num\u00e9rot\u00e9s sont \u00e0 r\u00e9duire ou \u00e0 mettre en s\u00e9curit\u00e9, '
-        : 'L\u2019arbre num\u00e9rot\u00e9 est \u00e0 r\u00e9duire ou \u00e0 mettre en s\u00e9curit\u00e9, ')+
-      'pas \u00e0 abattre. '
-    : '<b>Coupez uniquement les arbres portant une pastille orange num\u00e9rot\u00e9e.</b> ';
-
-  const NOMACT={abattre:'\u00c0 abattre',elaguer:'\u00c0 \u00e9laguer'};
-  const NOMETAT={sain:'Sain',deperit:'D\u00e9p\u00e9rissant',dangereux:'Dangereux',mort:'Mort sur pied'};
-  const lignes=abattre.map(function(r){
-    const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
-    return '<tr>'+
-      '<td class="num"><span class="np'+(r.action==='elaguer'?' el':'')+'">'+r.n+'</span></td>'+
-      '<td><b>'+esc(r.nom)+'</b><br><i>'+esc(r.latin||'')+'</i></td>'+
-      '<td>'+(r.circ?r.circ+' cm<br><span class="pt">\u2300 '+Math.round(r.circ/Math.PI)+' cm</span>':'\u2014')+'</td>'+
-      '<td>'+(r.haut?r.haut+' m':'\u2014')+'</td>'+
-      '<td>'+(A.n||'\u2014')+(E?'<br><span class="pt">'+E.n+'</span>':'')+'</td>'+
-      '<td class="gps">'+dmsCourt(r.lat,'N','S')+'<br>'+dmsCourt(r.lng,'E','O')+'</td>'+
-      '</tr>';
-  }).join('');
-
-  const carteFiche=function(r){
-    const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
-    const mi={n:r.milieu}; const age=r.age?{bas:'',haut:''}:null;
-    const mk=r.marq||[];
-    return '<div class="fiche">'+
-      '<div class="fh"><span class="fnum'+(r.action==='elaguer'?' el':'')+'">'+r.n+'</span>'+
-        '<span class="ft"><b>'+esc(r.nom)+'</b><span>'+esc(r.latin||'')+'</span></span>'+
-        '<span class="fact">'+(A.n||'')+'</span></div>'+
-      '<div class="fb">'+
-        (r.img?'<img class="fp" src="'+r.img+'">':'<div class="fp vide">Pas de photo</div>')+
-        '<div class="fd">'+
-          '<div><span>Circonf\u00e9rence</span><b>'+(r.circ?r.circ+' cm':'non mesur\u00e9e')+'</b></div>'+
-          '<div><span>Diam\u00e8tre</span><b>'+(r.circ?Math.round(r.circ/Math.PI)+' cm':'\u2014')+'</b></div>'+
-          '<div><span>Hauteur</span><b>'+(r.haut?r.haut+' m':'\u2014')+'</b></div>'+
-          '<div><span>\u00c9tat</span><b>'+((E&&E.n)||'\u2014')+'</b></div>'+
-          '<div><span>Milieu</span><b>'+(mi.n||'\u2014')+'</b></div>'+
-          '<div><span>\u00c2ge estim\u00e9</span><b>'+(r.age||'\u2014')+'</b></div>'+
-          '<div class="lg"><span>Coordonn\u00e9es</span><b class="gps">'+
-            dmsCourt(r.lat,'N','S')+'   '+dmsCourt(r.lng,'E','O')+'</b></div>'+
-          (mk.length?'<div class="lg"><span>\u00c0 signaler</span><b>'+esc(mk.join(', '))+'</b></div>':'')+
-          (r.note?'<div class="lg"><span>Note</span><b>'+esc(r.note)+'</b></div>':'')+
-        '</div></div></div>';
+/* Le plan est fige dans un objet : la meme fonction sert a l'afficher
+   ici et a le rejouer depuis un lien, sans acces aux donnees de l'equipe. */
+/* Le plan suit la portee affichee : sur « Hors territoire » on ne verrait
+   pas les arbres du territoire. Le message le dit plutot que de laisser
+   croire qu'aucun arbre n'est marque. */
+function messagePlanVide(){
+  const ailleurs=ST.recs.filter(r=>!r.del&&r.kind==='a'&&
+    (r.action==='abattre'||r.action==='elaguer')).length;
+  const vus=recsOf(ST.aT).filter(r=>!r.del&&r.kind==='a'&&
+    (r.action==='abattre'||r.action==='elaguer')).length;
+  if(ailleurs&&!vus)
+    return ailleurs+' arbre'+(ailleurs>1?'s':'')+' \u00e0 couper, mais hors de la vue '+
+      'courante. Changez de territoire.';
+  return 'Aucun arbre marqu\u00e9 \u00e0 abattre ou \u00e0 \u00e9laguer';
+}
+async function composerPlan(opt){
+  const o=opt||{};
+  const t=terr();
+  const tous=recsOf(ST.aT).filter(r=>!r.del&&r.kind==='a');
+  /* Un chantier d'elagage et un chantier d'abattage ne se font pas le
+     meme jour : on doit pouvoir n'envoyer que l'un des deux, ou une
+     poignee d'arbres. */
+  let abattre=tous.filter(function(r){
+    if(o.quoi==='abattre')return r.action==='abattre';
+    if(o.quoi==='elaguer')return r.action==='elaguer';
+    return r.action==='abattre'||r.action==='elaguer';
+  });
+  if(o.choisis&&o.choisis.length)abattre=abattre.filter(r=>o.choisis.indexOf(r.id)>-1);
+  if(!abattre.length)return null;
+  /* les abattages d'abord, les elagages ensuite : c'est l'ordre du
+     chantier, et la numerotation le reflete */
+  const rang=r=>r.action==='abattre'?0:1;
+  abattre.sort((a,b)=>rang(a)-rang(b)||b.lat-a.lat||a.lng-b.lng);
+  const SEUIL=50;
+  const conserver=tous.filter(function(r){
+    if(abattre.indexOf(r)>-1)return false;
+    return abattre.some(a=>L.latLng([r.lat,r.lng]).distanceTo(L.latLng([a.lat,a.lng]))<SEUIL);
+  });
+  const arbre=async function(r,n){
+    const p=(r.photos||[]).find(x=>x.role==='ensemble');
+    const sp=SP[r.sp]||{nom:r.sp,latin:''};
+    const mi=(MILIEUX.find(m=>m.k===r.milieu)||{});
+    const a=ageArbre(r.sp,r.circ,mi.f,r.mes,r.cernes);
+    return {n:n, lat:r.lat, lng:r.lng, nom:sp.nom, latin:sp.latin||'',
+      circ:r.circ||null, haut:r.haut||null, action:r.action, etat:r.etat||null,
+      milieu:mi.n||null, note:r.note||'',
+      age:(a&&!a.impossible)?(a.bas+'\u2013'+a.haut+' ans'):null,
+      marq:(r.marq||[]).map(k=>(MARQUEURS.find(y=>y.k===k)||{}).n).filter(Boolean),
+      img:p?(p.chemin?(await urlPhoto(p.chemin,604800))||p.vignette:p.vignette):null};
   };
-  const fichesAb=abattre.filter(r=>r.action==='abattre').map(carteFiche).join('');
-  const fichesEl=abattre.filter(r=>r.action==='elaguer').map(carteFiche).join('');
+  const liste=[];
+  for(let i=0;i<abattre.length;i++)liste.push(await arbre(abattre[i],i+1));
+  return {titre:(t?t.nom:'Toutes les observations'), dep:(t&&t.dep)||null,
+    ring:(t&&t.ring)||null, date:Date.now(),
+    arbres:liste, garder:conserver.map(r=>({lat:r.lat,lng:r.lng}))};
+}
 
-  const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
-  '<title>'+(nAb&&nEl?'Plan d\u2019intervention':nEl?'Plan d\u2019\u00e9lagage':'Plan de coupe')+
-    ' \u2014 '+esc(t?t.nom:'Aff\u00fbt')+'</title><style>'+
+const STYLE_DOC=
   '@page{size:A4;margin:14mm 13mm}'+
   '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
   'html,body{max-width:100%;overflow-x:hidden}'+
@@ -235,17 +228,140 @@ function ouvrirDocumentPlan(plan,surPlace){
   '.pied{margin-top:24px;padding-top:14px;border-top:1px solid #DDD8CC;'+
     'font-size:9pt;color:#5C6B63;line-height:1.55}'+
   '.saut{page-break-before:always;height:26px}'+
+  '.fgrande{width:100%;max-height:340px;object-fit:cover;border-radius:10px;margin:4px 0 14px}'+
+  '.cle{color:#5C6B63;font-size:9.5pt;width:42%}'+
+  '.lab2{font-size:8.5pt;text-transform:uppercase;letter-spacing:.05em;color:#5C6B63;'+
+    'margin:20px 0 6px}'+
+  '.note2{font-size:11pt;line-height:1.55;background:#F3F1E8;padding:12px 14px;'+
+    'border-radius:10px}'+
   '@media print{.noimp{display:none}}'+
   '.noimp{position:fixed;left:0;right:0;bottom:0;background:#16211C;'+
     'padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:12px;'+
     'box-shadow:0 -4px 20px rgba(0,0,0,.35)}'+
-  '.noimp button{flex:1;background:#7FB8D6;color:#0F1815;border:0;border-radius:14px;'+
-    'padding:18px 16px;font-size:16px;font-weight:650;line-height:1.2;'+
-    'font-family:inherit;cursor:pointer}'+
-  '.noimp button.sec{flex:0 0 40%;background:transparent;color:#fff;'+
-    'border:1.5px solid rgba(255,255,255,.4)}'+
-  'body{padding-bottom:110px}'+
-  '@media print{body{padding-bottom:0}}'+
+  /* Boutons dimensionnes pour le terrain : des doigts froids, des gants,
+     un ecran mouille. On vise 60 px de haut, bien au-dela du minimum. */
+  '.noimp button{flex:1;background:#7FB8D6;color:#0F1815;border:0;border-radius:16px;'+
+    'padding:20px 14px;font-size:17.5px;font-weight:650;line-height:1.25;'+
+    'min-height:62px;font-family:inherit;cursor:pointer;'+
+    '-webkit-tap-highlight-color:transparent}'+
+  '.noimp button.sec{flex:0 0 34%;background:transparent;color:#fff;'+
+    'border:1.5px solid rgba(255,255,255,.42)}'+
+  '@media screen and (max-width:400px){'+
+    '.noimp button{font-size:16px;padding:20px 8px}'+
+    '.noimp button.sec{flex:0 0 30%}}'+
+  'body{padding-bottom:124px}'+
+  '@media print{body{padding-bottom:0}}';
+const SCRIPT_ECHELLE=
+  '<script>(function(){function k(){'+
+    'document.querySelectorAll(".cadre").forEach(function(c){'+
+      'var m=c.firstElementChild, l=parseFloat(c.style.getPropertyValue("--l"));'+
+      'var r=c.clientWidth/l; m.style.transform="scale("+r+")";});}'+
+    'k();addEventListener("resize",k);addEventListener("orientationchange",k);'+
+    'addEventListener("beforeprint",function(){'+
+      'document.querySelectorAll(".carte").forEach(function(m){m.style.transform="none"})});'+
+    'addEventListener("afterprint",k);})();<\/script>';
+
+function ouvrirDocumentFiche(f,surPlace){
+  const dat=new Date(f.date||Date.now());
+  const carte=carteHTML([[f.lat,f.lng]],720,400,
+    [{lat:f.lat,lng:f.lng,n:'\u25cf',type:''}],f.ring);
+  const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
+  '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'+
+  '<title>'+esc(f.titre)+' \u2014 Aff\u00fbt</title><style>'+
+  STYLE_DOC+
+  '</style></head><body>'+
+  '<h1>'+esc(f.titre)+'</h1>'+
+  '<div class="sst"><i>'+esc(f.latin||'')+'</i>'+(f.latin?' \u00b7 ':'')+
+    esc(f.nature)+' \u00b7 '+fmtDate(dat)+
+    (f.terr?' \u00b7 '+esc(f.terr):'')+'</div>'+
+  (f.img?'<img class="fgrande" src="'+f.img+'">':'')+
+  carte+
+  '<div class="leg">'+dmsCourt(f.lat,'N','S')+'   '+dmsCourt(f.lng,'E','O')+'</div>'+
+  (f.lignes.length
+    ? '<table><tbody>'+f.lignes.map(l=>'<tr><td class="cle">'+esc(l[0])+'</td>'+
+      '<td><b>'+esc(l[1])+'</b></td></tr>').join('')+'</tbody></table>'
+    : '')+
+  (f.note?'<div class="lab2">Note</div><div class="note2">'+esc(f.note)+'</div>':'')+
+  '<div class="pied">Fiche \u00e9tablie avec Aff\u00fbt'+
+    (f.auteur?' \u00b7 observ\u00e9 par '+esc(f.auteur):'')+
+    '. Coordonn\u00e9es en degr\u00e9s, minutes, secondes (WGS 84).</div>'+
+  SCRIPT_ECHELLE+
+  '<div class="noimp"><button class="sec" onclick="window.close()">Fermer</button>'+
+    '<button onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>'+
+  '</body></html>';
+  if(surPlace){ document.open(); document.write(doc); document.close(); return }
+  const w=window.open('','_blank');
+  if(!w){toast('Autorisez les fen\u00eatres');return}
+  w.document.open(); w.document.write(doc); w.document.close();
+}
+
+function ouvrirDocumentPlan(plan,surPlace){
+  const abattre=plan.arbres, conserver=plan.garder||[];
+  const pts=abattre.map(r=>[r.lat,r.lng]).concat(conserver.map(r=>[r.lat,r.lng]));
+  const marq=abattre.map(r=>({lat:r.lat,lng:r.lng,n:r.n,
+      type:(r.action==='elaguer'?'elag':'')}))
+    .concat(conserver.map(r=>({lat:r.lat,lng:r.lng,n:'\u2022',type:'garde'})));
+  const dat=new Date(plan.date||Date.now());
+  const t={nom:plan.titre,dep:plan.dep,ring:plan.ring};
+  const nAb=abattre.filter(r=>r.action==='abattre').length;
+  const nEl=abattre.filter(r=>r.action==='elaguer').length;
+  /* La consigne dit ce qu'il y a reellement a faire : un chantier
+     d'elagage n'est pas un abattage, et les confondre couterait cher. */
+  const consigne = (nAb&&nEl)
+    ? '<b>Deux interventions distinctes.</b> Les pastilles orange fonc\u00e9 d\u00e9signent '+
+      nAb+' arbre'+(nAb>1?'s':'')+' \u00e0 abattre, les pastilles orange clair '+
+      nEl+' arbre'+(nEl>1?'s':'')+' \u00e0 \u00e9laguer \u2014 ceux-l\u00e0 restent sur pied. '
+    : nEl
+    ? '<b>Chantier d\u2019\u00e9lagage.</b> '+(nEl>1
+        ? 'Les '+nEl+' arbres num\u00e9rot\u00e9s sont \u00e0 r\u00e9duire ou \u00e0 mettre en s\u00e9curit\u00e9, '
+        : 'L\u2019arbre num\u00e9rot\u00e9 est \u00e0 r\u00e9duire ou \u00e0 mettre en s\u00e9curit\u00e9, ')+
+      'pas \u00e0 abattre. '
+    : '<b>Coupez uniquement les arbres portant une pastille orange num\u00e9rot\u00e9e.</b> ';
+
+  const NOMACT={abattre:'\u00c0 abattre',elaguer:'\u00c0 \u00e9laguer'};
+  const NOMETAT={sain:'Sain',deperit:'D\u00e9p\u00e9rissant',dangereux:'Dangereux',mort:'Mort sur pied'};
+  const lignes=abattre.map(function(r){
+    const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
+    return '<tr>'+
+      '<td class="num"><span class="np'+(r.action==='elaguer'?' el':'')+'">'+r.n+'</span></td>'+
+      '<td><b>'+esc(r.nom)+'</b><br><i>'+esc(r.latin||'')+'</i></td>'+
+      '<td>'+(r.circ?r.circ+' cm<br><span class="pt">\u2300 '+Math.round(r.circ/Math.PI)+' cm</span>':'\u2014')+'</td>'+
+      '<td>'+(r.haut?r.haut+' m':'\u2014')+'</td>'+
+      '<td>'+(A.n||'\u2014')+(E?'<br><span class="pt">'+E.n+'</span>':'')+'</td>'+
+      '<td class="gps">'+dmsCourt(r.lat,'N','S')+'<br>'+dmsCourt(r.lng,'E','O')+'</td>'+
+      '</tr>';
+  }).join('');
+
+  const carteFiche=function(r){
+    const A={n:NOMACT[r.action]||''}, E=r.etat?{n:NOMETAT[r.etat]}:null;
+    const mi={n:r.milieu}; const age=r.age?{bas:'',haut:''}:null;
+    const mk=r.marq||[];
+    return '<div class="fiche">'+
+      '<div class="fh"><span class="fnum'+(r.action==='elaguer'?' el':'')+'">'+r.n+'</span>'+
+        '<span class="ft"><b>'+esc(r.nom)+'</b><span>'+esc(r.latin||'')+'</span></span>'+
+        '<span class="fact">'+(A.n||'')+'</span></div>'+
+      '<div class="fb">'+
+        (r.img?'<img class="fp" src="'+r.img+'">':'<div class="fp vide">Pas de photo</div>')+
+        '<div class="fd">'+
+          '<div><span>Circonf\u00e9rence</span><b>'+(r.circ?r.circ+' cm':'non mesur\u00e9e')+'</b></div>'+
+          '<div><span>Diam\u00e8tre</span><b>'+(r.circ?Math.round(r.circ/Math.PI)+' cm':'\u2014')+'</b></div>'+
+          '<div><span>Hauteur</span><b>'+(r.haut?r.haut+' m':'\u2014')+'</b></div>'+
+          '<div><span>\u00c9tat</span><b>'+((E&&E.n)||'\u2014')+'</b></div>'+
+          '<div><span>Milieu</span><b>'+(mi.n||'\u2014')+'</b></div>'+
+          '<div><span>\u00c2ge estim\u00e9</span><b>'+(r.age||'\u2014')+'</b></div>'+
+          '<div class="lg"><span>Coordonn\u00e9es</span><b class="gps">'+
+            dmsCourt(r.lat,'N','S')+'   '+dmsCourt(r.lng,'E','O')+'</b></div>'+
+          (mk.length?'<div class="lg"><span>\u00c0 signaler</span><b>'+esc(mk.join(', '))+'</b></div>':'')+
+          (r.note?'<div class="lg"><span>Note</span><b>'+esc(r.note)+'</b></div>':'')+
+        '</div></div></div>';
+  };
+  const fichesAb=abattre.filter(r=>r.action==='abattre').map(carteFiche).join('');
+  const fichesEl=abattre.filter(r=>r.action==='elaguer').map(carteFiche).join('');
+
+  const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
+  '<title>'+(nAb&&nEl?'Plan d\u2019intervention':nEl?'Plan d\u2019\u00e9lagage':'Plan de coupe')+
+    ' \u2014 '+esc(t?t.nom:'Aff\u00fbt')+'</title><style>'+
+  STYLE_DOC+
   '</style></head><body>'+
   '<h1>'+(nAb&&nEl?'Plan d\u2019intervention':nEl?'Plan d\u2019\u00e9lagage':'Plan de coupe')+'</h1>'+
   '<div class="sst">'+esc(t?t.nom:'Toutes les observations')+
@@ -282,41 +398,34 @@ function ouvrirDocumentPlan(plan,surPlace){
     '<div class="sst">'+nEl+' sujet'+(nEl>1?'s':'')+
     ' \u00b7 r\u00e9duction ou mise en s\u00e9curit\u00e9, l\u2019arbre reste sur pied.</div>'+
     fichesEl:'')+
-  '<script>(function(){function k(){'+
-    'document.querySelectorAll(".cadre").forEach(function(c){'+
-      'var m=c.firstElementChild, l=parseFloat(c.style.getPropertyValue("--l"));'+
-      'var r=c.clientWidth/l; m.style.transform="scale("+r+")";});}'+
-    'k();addEventListener("resize",k);addEventListener("orientationchange",k);'+
-    'addEventListener("beforeprint",function(){'+
-      'document.querySelectorAll(".carte").forEach(function(m){m.style.transform="none"})});'+
-    'addEventListener("afterprint",k);})();<\/script>'+
+  SCRIPT_ECHELLE+
   '<div class="noimp"><button class="sec" onclick="window.close()">Fermer</button>'+
     '<button onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>'+
   '</body></html>';
 
-  if(surPlace){
-    document.open(); document.write(doc); document.close();
-    return;
-  }
+  if(surPlace){ document.open(); document.write(doc); document.close(); return }
   const w=window.open('','_blank');
   if(!w){toast('Autorisez les fen\u00eatres pour ouvrir le plan');return}
   w.document.open(); w.document.write(doc); w.document.close();
 }
+
 
 function erreur(t,d){
   document.body.innerHTML='<div class="err"><h1>'+t+'</h1><p>'+d+'</p></div>';
 }
 (async function(){
   const m=(location.hash||'').match(/[#&]?plan=([a-z0-9]{16,})/i);
-  if(!m)return erreur('Aucun plan demand\u00e9',
+  if(!m)return erreur('Aucun document demand\u00e9',
     'Ce lien est incomplet. Demandez-en un nouveau \u00e0 la personne qui vous l\u2019a transmis.');
   if(!window.supabase)return erreur('Service injoignable',
     'V\u00e9rifiez votre connexion, puis rechargez la page.');
   const cli=window.supabase.createClient(SB_URL,SB_CLE,{auth:{persistSession:false}});
   const {data,error}=await cli.rpc('lire_plan',{p_jeton:m[1]});
-  if(error||!data)return erreur('Plan introuvable',
-    'Ce lien a expir\u00e9 ou n\u2019est plus valable. Les plans cessent de fonctionner '+
+  if(error||!data)return erreur('Document introuvable',
+    'Ce lien a expir\u00e9 ou n\u2019est plus valable. Les liens cessent de fonctionner '+
     'au bout de 90 jours. Demandez-en un nouveau.');
-  ouvrirDocumentPlan(data.donnees,true);
+  const d=data.donnees;
+  if(d&&d.type==='fiche')ouvrirDocumentFiche(d,true);
+  else ouvrirDocumentPlan(d,true);
 })();
 </script></body></html>
