@@ -5783,9 +5783,9 @@ function zoomPour(emp,largeur,hauteur){
   }
   return 10;
 }
-function carteHTML(pts,largeur,hauteur,marqueurs,contour){
+function carteHTML(pts,largeur,hauteur,marqueurs,contour,zImpose){
   const emp=empriseDe(pts,0.22);
-  const z=zoomPour(emp,largeur,hauteur);
+  const z=zImpose||zoomPour(emp,largeur,hauteur);
   const x0=lonToX(emp.o,z), y0=latToY(emp.n,z);
   const x1=lonToX(emp.e,z), y1=latToY(emp.s,z);
   const l=(x1-x0)*TUILE, h=(y1-y0)*TUILE;
@@ -5968,6 +5968,9 @@ const STYLE_DOC=
     'margin:20px 0 6px}'+
   '.note2{font-size:11pt;line-height:1.55;background:#F3F1E8;padding:12px 14px;'+
     'border-radius:10px}'+
+  '.lien2{font-size:10pt;color:#5C6B63;margin:-6px 0 20px}'+
+  '.lien2 a{color:#2E6B8C}'+
+  '@media print{.lien2{color:#16211C}}'+
   '@media print{.noimp{display:none}}'+
   '.noimp{position:fixed;left:0;right:0;bottom:0;background:#16211C;'+
     'padding:12px 14px calc(12px + env(safe-area-inset-bottom));display:flex;gap:10px;'+
@@ -6055,8 +6058,16 @@ async function composerFiche(id){
 }
 function ouvrirDocumentFiche(f,surPlace){
   const dat=new Date(f.date||Date.now());
-  const carte=carteHTML([[f.lat,f.lng]],720,400,
-    [{lat:f.lat,lng:f.lng,n:'\u25cf',type:''}],f.ring);
+  /* Sur un point unique, l'emprise est nulle : le calcul choisit le zoom
+     maximal et l'on ne voit plus que quelques metres carres. On elargit
+     a environ 300 m de cote, de quoi reconnaitre le lieu. */
+  const pin=[{lat:f.lat,lng:f.lng,n:'\u25cf',type:''}];
+  const pt=[[f.lat,f.lng]];
+  /* zoom 18 : environ 430 m de large, on distingue les arbres et les
+     acces. zoom 15 : environ 3,5 km, de quoi situer dans le paysage. */
+  const carte=carteHTML(pt,720,400,pin,f.ring,18);
+  const large=carteHTML(pt,720,300,pin,f.ring,15);
+  const geo=f.lat.toFixed(6)+','+f.lng.toFixed(6);
   const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
   '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'+
   '<title>'+esc(f.titre)+' \u2014 Aff\u00fbt</title><style>'+
@@ -6068,7 +6079,14 @@ function ouvrirDocumentFiche(f,surPlace){
     (f.terr?' \u00b7 '+esc(f.terr):'')+'</div>'+
   (f.img?'<img class="fgrande" src="'+f.img+'">':'')+
   carte+
-  '<div class="leg">'+dmsCourt(f.lat,'N','S')+'   '+dmsCourt(f.lng,'E','O')+'</div>'+
+  '<div class="leg">Vue rapproch\u00e9e, environ 430 m de large \u00b7 '+dmsCourt(f.lat,'N','S')+'   '+
+    dmsCourt(f.lng,'E','O')+'</div>'+
+  large+
+  '<div class="leg">Vue d\u2019ensemble, environ 3,5 km de large</div>'+
+  '<div class="lien2">Ouvrir le point : '+
+    '<a href="https://www.google.com/maps/search/?api=1&query='+geo+'">Google Maps</a> \u00b7 '+
+    '<a href="https://maps.apple.com/?ll='+geo+'&q=Aff%C3%BBt">Plans</a> \u00b7 '+
+    '<a href="geo:'+geo+'">application de navigation</a></div>'+
   (f.lignes.length
     ? '<table><tbody>'+f.lignes.map(l=>'<tr><td class="cle">'+esc(l[0])+'</td>'+
       '<td><b>'+esc(l[1])+'</b></td></tr>').join('')+'</tbody></table>'
