@@ -228,6 +228,19 @@ button:active{transform:scale(.965)}
 .mbrole{display:inline-block;font-size:12.5px;color:var(--brume-2);
   padding:6px 12px;border-radius:11px;background:var(--anthracite-2);border:1px solid var(--trait)}
 body.attente{opacity:.5}
+.eqrow{display:block;width:100%;text-align:left;padding:13px 15px;border-radius:16px;
+  background:var(--anthracite-2);border:1.5px solid var(--trait);margin-bottom:8px}
+.eqrow.on{border-color:var(--foret-clair);background:var(--foret)}
+.eqn{display:block;font-size:15.5px;font-weight:600;margin-bottom:3px}
+.eqbadge{font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:7px;margin-left:7px;
+  background:var(--anthracite-3);color:var(--brume-2);vertical-align:2px}
+.eqrow.on .eqbadge{background:rgba(255,255,255,.18);color:#fff}
+.eqbadge.act{background:var(--foret-clair);color:#0E1713}
+.eqd{display:block;font-size:12px;color:var(--brume-2)}
+.eqrow.on .eqd{color:rgba(244,243,234,.8)}
+.eqm{display:block;font-size:11.5px;color:var(--brume-2);margin-top:4px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eqrow.on .eqm{color:rgba(244,243,234,.68)}
 .mbrow.moi{background:var(--anthracite-3);border-radius:14px;padding:13px;margin:0 -6px}
 .mbmoi{font-size:11px;font-weight:600;color:var(--foret-clair);background:rgba(62,140,90,.16);
   padding:3px 8px;border-radius:8px;vertical-align:2px}
@@ -659,7 +672,8 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   <div class="sbody"><div id="tr-list"></div>
     <div class="note">Un territoire se trace en marchant ses limites, ou en suivant le parcellaire cadastral depuis le fond de carte.</div>
     <div class="lab">Équipe</div>
-    <div id="eq-etat" class="note" style="margin-top:0;border-left-color:var(--foret-clair)">—</div>
+    <div id="eq-liste"></div>
+    <div id="eq-etat" class="note" style="margin-top:10px;border-left-color:var(--foret-clair)">—</div>
     <div class="chipgrid" style="margin-top:10px" id="eq-boutons"></div>
     <div class="lab">Chantier</div>
     <div class="chipgrid">
@@ -708,6 +722,7 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div style="flex:1"><h2>Équipe</h2><div class="sub" id="ch-sous">—</div></div>
     <button class="link" id="ch-son">Son</button>
     <button class="link" data-close="1">Fermer</button></div>
+  <div class="tagbar" id="ch-eq" style="display:none"></div>
   <div style="padding:0 14px 10px">
     <div class="seg" id="ch-onglets">
       <button data-v="msg" class="on">Messages</button>
@@ -4758,6 +4773,41 @@ const uuid4=()=> (crypto&&crypto.randomUUID)?crypto.randomUUID()
 /* Toute modification locale est datee : c'est elle qu'on enverra. */
 function marquer(o){ if(o){o.maj=Date.now(); if(!o.sid)o.sid=uuid4();} return o }
 
+/* ---------------------------------------------------------------
+   PLUSIEURS EQUIPES
+   La famille et les compagnons de chasse ne partagent pas les memes
+   choses. ST.equipes porte la liste, ST.equipe reste l'equipe courante
+   — c'est elle qui recoit les messages et les pointages.
+--------------------------------------------------------------- */
+function mesEquipes(){ return ST.equipes||[] }
+function equipeParId(id){ return mesEquipes().find(e=>e.id===id)||null }
+function equipeSocle(){
+  const l=mesEquipes();
+  return l.find(e=>e.socle) || l[0] || null;
+}
+function activerEquipe(id){
+  const e=equipeParId(id); if(!e)return;
+  ST.equipe=e; ST.equipeActive=id; save();
+  syncEtat(); syncBoutons();
+  if(sbPret()){ abonner(); chargerMembres(); chargerMessages(); }
+}
+/* Un enregistrement va toujours a l'equipe socle, et en plus a toute
+   equipe dont un territoire contient le point. Un chevreuil vu sur le
+   territoire de chasse est ainsi vu par la famille et par les chasseurs. */
+function equipesPour(lat,lng){
+  const out=[];
+  const s=equipeSocle(); if(s)out.push(s.id);
+  mesEquipes().forEach(function(eq){
+    if(out.indexOf(eq.id)>-1)return;
+    const dedans=ST.terr.some(function(t){
+      if(!t.ring||t.ring.length<3)return false;
+      if(!(t.equipes||[]).includes(eq.id))return false;
+      return dansPolygone(lat,lng,t.ring);
+    });
+    if(dedans)out.push(eq.id);
+  });
+  return out;
+}
 function sbPret(){ return !!(sb && ST.equipe && ST.equipe.id) }
 /* Un lecteur consulte tout mais n'ecrit rien. Le verrou reel est en
    base : ce qui suit ne fait qu'eviter des gestes voues a l'echec. */
@@ -4859,23 +4909,34 @@ async function sbCreerEquipe(nom,pseudo){
   const {data,error}=await sb.rpc('creer_equipe',{p_nom:nom,p_pseudo:pseudo});
   if(error)throw error;
   const l=Array.isArray(data)?data[0]:data;
-  ST.equipe={id:l.equipe_id,nom:nom,code:l.code,pseudo:pseudo,role:'chef'};
+  const eq={id:l.equipe_id,nom:nom,code:l.code,pseudo:pseudo,role:'chef',
+    socle:!(ST.equipes||[]).length};
+  ST.equipes=(ST.equipes||[]).filter(x=>x.id!==eq.id).concat([eq]);
+  ST.equipe=eq; ST.equipeActive=eq.id;
   ST.sync={depuis:null};
-  await save(); return ST.equipe;
+  await save(); return eq;
 }
 async function sbRejoindre(code,pseudo){
   if(!await sbInit())throw new Error('service injoignable');
   const {data,error}=await sb.rpc('rejoindre_equipe',{p_code:code,p_pseudo:pseudo});
   if(error)throw error;
   const l=Array.isArray(data)?data[0]:data;
-  ST.equipe={id:l.equipe_id,nom:l.equipe_nom,code:code.toUpperCase().trim(),
-    pseudo:pseudo,role:l.role||'lecteur'};
+  const eq={id:l.equipe_id,nom:l.equipe_nom,code:code.toUpperCase().trim(),
+    pseudo:pseudo,role:l.role||'lecteur',socle:!(ST.equipes||[]).length};
+  ST.equipes=(ST.equipes||[]).filter(x=>x.id!==eq.id).concat([eq]);
+  ST.equipe=eq; ST.equipeActive=eq.id;
   ST.sync={depuis:null};
-  await save(); return ST.equipe;
+  await save(); return eq;
 }
 async function sbQuitter(){
   try{ if(sbCanal){sb.removeChannel(sbCanal);sbCanal=null} }catch(e){}
-  ST.equipe=null; ST.sync=null; await save(); syncEtat();
+  const id=ST.equipe&&ST.equipe.id;
+  ST.equipes=(ST.equipes||[]).filter(e=>e.id!==id);
+  if(ST.equipes.length&&!ST.equipes.some(e=>e.socle))ST.equipes[0].socle=true;
+  ST.equipe=ST.equipes[0]||null;
+  ST.equipeActive=ST.equipe?ST.equipe.id:null;
+  ST.sync=null; await save(); syncEtat(); syncBoutons();
+  if(sbPret())abonner();
 }
 
 /* ---------- conversion local <-> serveur ---------- */
@@ -4883,7 +4944,12 @@ async function sbQuitter(){
    demain, l'equipe socle plus celles dont un territoire contient le point. */
 function equipesDe(o){
   const l=(o&&o.equipes&&o.equipes.length)?o.equipes.slice():[];
-  if(ST.equipe&&l.indexOf(ST.equipe.id)<0)l.push(ST.equipe.id);
+  /* une fiche localisee suit la regle des territoires ; le reste
+     (territoires, battues) reste attache a l'equipe courante */
+  const vises=(o&&typeof o.lat==='number'&&typeof o.lng==='number')
+    ? equipesPour(o.lat,o.lng)
+    : (ST.equipe?[ST.equipe.id]:[]);
+  vises.forEach(function(id){ if(l.indexOf(id)<0)l.push(id) });
   return l;
 }
 const sidTerr=id=>{const t=ST.terr.find(x=>x.id===id);return t?(t.sid||null):null};
@@ -4978,7 +5044,8 @@ async function synchroniser(silencieux){
     let recu=0;
     for(const table of ['territoire','battue','fiche']){
       const {data,error}=await sb.from(table).select('*')
-        .contains('equipes',[ST.equipe.id]).gt('modifie_le',depuis).order('modifie_le');
+        .overlaps('equipes',mesEquipes().map(e=>e.id))
+        .gt('modifie_le',depuis).order('modifie_le');
       if(error)throw error;
       (data||[]).forEach(l=>{ if(fusionner(table,l))recu++ });
     }
@@ -5038,7 +5105,7 @@ async function pousserEssences(){
 async function tirerEssences(){
   if(!sbPret())return 0;
   const {data,error}=await sb.from('essence').select('*')
-    .contains('equipes',[ST.equipe.id]);
+    .overlaps('equipes',mesEquipes().map(e=>e.id));
   if(error)throw error;
   let n=0;
   (data||[]).forEach(function(l){
@@ -5062,7 +5129,8 @@ async function tirerEssences(){
 async function abonner(){
   if(!sbPret())return;
   try{ if(sbCanal){sb.removeChannel(sbCanal);sbCanal=null} }catch(e){}
-  sbCanal=sb.channel('equipe:'+ST.equipe.id);
+  sbCanal=sb.channel('equipes:'+mesEquipes().map(e=>e.id).join('_').slice(0,60));
+  const ids=mesEquipes().map(e=>e.id);
   sbCanal.on('postgres_changes',
     {event:'*',schema:'public',table:'presence',filter:'equipe_id=eq.'+ST.equipe.id},
     function(){chargerMembres()});
@@ -5082,7 +5150,7 @@ async function abonner(){
     });
   ['fiche','territoire','battue'].forEach(function(table){
     sbCanal.on('postgres_changes',
-      {event:'*',schema:'public',table:table,filter:'equipe_id=eq.'+ST.equipe.id},
+      {event:'*',schema:'public',table:table},
       function(p){
         const l=p.new||p.old; if(!l)return;
         if(fusionner(table,l)){ ST.recs.sort((a,b)=>b.t-a.t); save(); renderAll(); syncTopbar(); }
@@ -5188,6 +5256,60 @@ $('#mb-liste').onclick=async function(e){
     ouvrirMembres();
   }catch(err){ toast('Refus\u00e9 : '+(err.message||'')) }
 };
+async function renderEquipes(){
+  const z=$('#eq-liste'); if(!z)return;
+  const l=mesEquipes();
+  if(!l.length){ z.innerHTML=''; return }
+  /* combien de membres et de territoires par equipe : sans cela on ne
+     sait pas ce qu'on partage ni avec qui */
+  let effectifs={};
+  if(sb){
+    try{
+      const {data}=await sb.from('membre').select('equipe_id,nom')
+        .in('equipe_id',l.map(e=>e.id));
+      (data||[]).forEach(function(m){
+        effectifs[m.equipe_id]=effectifs[m.equipe_id]||[];
+        if(effectifs[m.equipe_id].indexOf(m.nom)<0)effectifs[m.equipe_id].push(m.nom);
+      });
+    }catch(e){}
+  }
+  z.innerHTML=l.map(function(e){
+    const act=(ST.equipe&&ST.equipe.id===e.id);
+    const terrs=ST.terr.filter(t=>(t.equipes||[]).includes(e.id));
+    const noms=effectifs[e.id]||[];
+    const R={chef:'responsable',contrib:'contributeur',lecteur:'lecture seule'};
+    return '<button class="eqrow'+(act?' on':'')+'" data-eq="'+e.id+'">'+
+      '<span class="eqn"><b>'+esc(e.nom)+'</b>'+
+        (e.socle?'<span class="eqbadge">par d\u00e9faut</span>':'')+
+        (act?'<span class="eqbadge act">active</span>':'')+'</span>'+
+      '<span class="eqd">'+(R[e.role]||'contributeur')+
+        (noms.length?' \u00b7 '+noms.length+' membre'+(noms.length>1?'s':''):'')+
+        ' \u00b7 '+(terrs.length?terrs.length+' territoire'+(terrs.length>1?'s':''):'aucun territoire')+
+        '</span>'+
+      (noms.length?'<span class="eqm">'+esc(noms.slice(0,6).join(', '))+
+        (noms.length>6?'\u2026':'')+'</span>':'')+
+      (terrs.length?'<span class="eqm">'+esc(terrs.slice(0,4).map(t=>t.nom).join(', '))+
+        (terrs.length>4?'\u2026':'')+'</span>':'')+
+      '</button>';
+  }).join('');
+}
+$('#eq-liste').onclick=function(e){
+  const b=e.target.closest('[data-eq]'); if(!b)return;
+  if(ST.equipe&&ST.equipe.id===b.dataset.eq){ ouvrirSocle(b.dataset.eq); return }
+  activerEquipe(b.dataset.eq); renderEquipes();
+  toast(ST.equipe.nom+' \u00b7 \u00e9quipe active');
+};
+function ouvrirSocle(id){
+  const e=equipeParId(id); if(!e)return;
+  if(e.socle){toast(e.nom+' re\u00e7oit d\u00e9j\u00e0 toutes vos observations');return}
+  askConfirm('\u00c9quipe par d\u00e9faut',
+    'Toutes vos observations iront \u00e0 '+e.nom+', o\u00f9 qu\u2019elles soient prises. '+
+    'Les autres \u00e9quipes ne recevront que ce qui tombe sur leurs territoires.',
+    'Choisir',function(){
+      mesEquipes().forEach(x=>{x.socle=(x.id===id)});
+      save(); renderEquipes(); toast(e.nom+' devient l\u2019\u00e9quipe par d\u00e9faut');
+    });
+}
 function syncBoutons(){
   const b=$('#eq-boutons'); if(!b)return;
   b.innerHTML= ST.equipe
@@ -5195,10 +5317,14 @@ function syncBoutons(){
       '<button class="chip" id="eq-code-voir">Voir le code</button>'+
       '<button class="chip" id="eq-membres" style="grid-column:1/-1">Membres et droits</button>'+
       '<button class="chip" id="eq-compte" style="grid-column:1/-1">Mon identit\u00e9</button>'+
-      '<button class="chip" id="eq-quitter" style="grid-column:1/-1">Quitter l\u2019\u00e9quipe</button>'
+      '<button class="chip" id="eq-ouvrir" style="grid-column:1/-1">'+
+        'Cr\u00e9er ou rejoindre une autre \u00e9quipe</button>'+
+      '<button class="chip" id="eq-quitter" style="grid-column:1/-1">Quitter '+
+        esc((ST.equipe||{}).nom||'l\u2019\u00e9quipe')+'</button>'
     : '<button class="chip" id="eq-ouvrir" style="grid-column:1/-1">Partager avec une \u00e9quipe</button>'+
       '<button class="chip" id="eq-compte" style="grid-column:1/-1">Mon identit\u00e9</button>';
   const o=$('#eq-ouvrir'); if(o)o.onclick=ouvrirEquipe;
+  renderEquipes();
   const s=$('#eq-sync');   if(s)s.onclick=function(){synchroniser(false)};
   const v=$('#eq-code-voir'); if(v)v.onclick=montrerCode;
   const mb=$('#eq-membres'); if(mb)mb.onclick=ouvrirMembres;
@@ -5463,8 +5589,26 @@ async function envoyerMessage(txt){
   }catch(e){ toast('Message non envoy\u00e9 : '+(e.message||'r\u00e9seau')) }
 }
 
+function renderChatEquipes(){
+  const z=$('#ch-eq'); if(!z)return;
+  const l=mesEquipes();
+  /* un seul groupe : pas de selecteur, il n'apporterait rien */
+  if(l.length<2){ z.style.display='none'; z.innerHTML=''; return }
+  z.style.display='flex';
+  z.innerHTML=l.map(e=>'<button class="tg'+(ST.equipe&&ST.equipe.id===e.id?' on':'')+
+    '" data-cheq="'+e.id+'">'+esc(e.nom)+'</button>').join('');
+}
+$('#ch-eq').onclick=function(e){
+  const b=e.target.closest('[data-cheq]'); if(!b)return;
+  if(ST.equipe&&ST.equipe.id===b.dataset.cheq)return;
+  activerEquipe(b.dataset.cheq);
+  renderChatEquipes();
+  $('#ch-sous').textContent=ST.equipe.nom+' \u00b7 '+ST.equipe.pseudo;
+  MESSAGES=[]; renderMessages(); chargerMessages(); chargerMembres();
+};
 function ouvrirChat(){
   if(!sbPret()){toast('Rejoignez une \u00e9quipe d\u2019abord');return}
+  renderChatEquipes();
   $('#ch-sous').textContent=ST.equipe.nom+' \u00b7 '+ST.equipe.pseudo;
   msgNonLus=0; syncPastille();
   $('#ch-rapides').innerHTML=PHRASES.map(p=>'<button class="tg" data-ph="'+esc(p)+'">'+esc(p)+'</button>').join('');
@@ -5856,7 +6000,12 @@ function ouvrirDocumentPlan(plan,surPlace){
   /* L'application demarre toujours vide. Aucun contenu n'est installe. */
   const data=st?{terr:st.terr||[],battues:st.battues||[],recs:st.recs||[],aT:st.aT}
                :{terr:[],battues:[],recs:[],aT:'ALL'};
-  ST.equipe=(st&&st.equipe)||null; ST.sync=(st&&st.sync)||null;
+  /* reprise : une equipe unique devient une liste d'une seule entree */
+  ST.equipes=(st&&Array.isArray(st.equipes))?st.equipes:((st&&st.equipe)?[st.equipe]:[]);
+  if(ST.equipes.length&&!ST.equipes.some(e=>e.socle))ST.equipes[0].socle=true;
+  ST.equipeActive=(st&&st.equipeActive)||(ST.equipes[0]?ST.equipes[0].id:null);
+  ST.equipe=ST.equipes.find(e=>e.id===ST.equipeActive)||ST.equipes[0]||null;
+  ST.sync=(st&&st.sync)||null;
   ST.essences=(st&&Array.isArray(st.essences))?st.essences:[];
   ST.vueBilan=(st&&st.vueBilan)||'tout';
   ST.essences.forEach(function(e){
