@@ -2679,6 +2679,7 @@ function syncTnMode(){
 $('#tn-mode-draw').onclick=function(){tnMode='draw';syncTnMode()};
 $('#tn-mode-view').onclick=function(){tnMode='view';syncTnMode()};
 $('#tr-new').onclick=function(){
+  if(refusLecture('trac\u00e9 de territoire'))return;
   closeAll();$('#tn-nom').value='';$('#tn-dep').value='';$('#tn-q').value='';$('#tn-res').innerHTML='';
   tnLieu=null;tnMode='draw';syncTnMode();
   setTimeout(()=>openSheet('#sh-terrname'),260);
@@ -4819,9 +4820,10 @@ function sbPret(){ return !!(sb && ST.equipe && ST.equipe.id) }
    base : ce qui suit ne fait qu'eviter des gestes voues a l'echec. */
 function estLecteur(){ return !!(ST.equipe && ST.equipe.role==='lecteur') }
 function estChef(){ return !!(ST.equipe && ST.equipe.role==='chef') }
-function refusLecture(){
+function refusLecture(quoi){
   if(!estLecteur())return false;
-  toast('Vous \u00eates en lecture seule sur cette \u00e9quipe');
+  toast('Lecture seule sur '+((ST.equipe||{}).nom||'cette \u00e9quipe')+
+    (quoi?' \u00b7 '+quoi:'')+'. Demandez les droits d\u2019\u00e9criture au responsable.');
   return true;
 }
 
@@ -5472,6 +5474,8 @@ function repereDe(lat,lng){
 
 async function pointer(){
   if(!sbPret()){toast('Rejoignez une \u00e9quipe d\u2019abord');return}
+  /* Volontairement autorise en lecture seule : signaler ou l'on se
+     trouve ne modifie aucune donnee, et c'est utile a tous en battue. */
   toast('Localisation\u2026');
   const p=await positionMaintenant();
   const rep=repereDe(p.lat,p.lng);
@@ -5618,6 +5622,9 @@ function renderMessages(){
 }
 async function envoyerMessage(txt){
   if(!sbPret()||!txt)return;
+  /* Volontairement ouvert aux lecteurs, comme le pointage : en battue,
+     un membre qui ne peut pas dire « chien devant » ne sert a rien.
+     La lecture seule protege les observations, pas la coordination. */
   const b=battue();
   const f=fixFrais();
   try{
@@ -5656,6 +5663,7 @@ function ouvrirChat(){
   msgNonLus=0; syncPastille();
   $('#ch-rapides').innerHTML=PHRASES.map(p=>'<button class="tg" data-ph="'+esc(p)+'">'+esc(p)+'</button>').join('');
   $('#ch-saisie').value=''; $('#ch-envoyer').disabled=true; syncSon();
+
   $$('#ch-onglets button').forEach(x=>x.classList.toggle('on',x.dataset.v==='msg'));
   $('#ch-fil').style.display='block'; $('#ch-pos').style.display='none';
   $('#ch-barre').style.display='flex';
