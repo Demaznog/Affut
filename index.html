@@ -819,7 +819,7 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <button class="link" data-close="1">Fermer</button></div>
   <div class="sbody">
     <div class="apercu"><span id="lp-apercu">—</span>
-      <a href="#" id="lp-vu" class="lienbleu">le lien</a></div>
+      </div>
     <input type="text" id="lp-lien" readonly>
     <div class="chipgrid" style="margin-top:10px">
       <button class="chip" id="lp-copier">Copier</button>
@@ -5970,20 +5970,20 @@ const STYLE_DOC=
     'border-radius:10px}'+
   '@media print{.noimp{display:none}}'+
   '.noimp{position:fixed;left:0;right:0;bottom:0;background:#16211C;'+
-    'padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:12px;'+
+    'padding:12px 14px calc(12px + env(safe-area-inset-bottom));display:flex;gap:10px;'+
     'box-shadow:0 -4px 20px rgba(0,0,0,.35)}'+
-  /* Boutons dimensionnes pour le terrain : des doigts froids, des gants,
-     un ecran mouille. On vise 60 px de haut, bien au-dela du minimum. */
-  '.noimp button{flex:1;background:#7FB8D6;color:#0F1815;border:0;border-radius:16px;'+
-    'padding:20px 14px;font-size:17.5px;font-weight:650;line-height:1.25;'+
-    'min-height:62px;font-family:inherit;cursor:pointer;'+
+  /* Une seule taille de bouton pour tous les documents, plan comme fiche :
+     assez large pour le terrain, pas au point d'occuper l'ecran. */
+  '.noimp button{flex:1;background:#7FB8D6;color:#0F1815;border:0;border-radius:14px;'+
+    'padding:0 14px;font-size:16px;font-weight:650;line-height:1.2;'+
+    'height:54px;font-family:inherit;cursor:pointer;'+
     '-webkit-tap-highlight-color:transparent}'+
-  '.noimp button.sec{flex:0 0 34%;background:transparent;color:#fff;'+
+  '.noimp button.sec{flex:0 0 32%;background:transparent;color:#fff;'+
     'border:1.5px solid rgba(255,255,255,.42)}'+
   '@media screen and (max-width:400px){'+
-    '.noimp button{font-size:16px;padding:20px 8px}'+
+    '.noimp button{font-size:14.5px;padding:0 8px}'+
     '.noimp button.sec{flex:0 0 30%}}'+
-  'body{padding-bottom:124px}'+
+  'body{padding-bottom:104px}'+
   '@media print{body{padding-bottom:0}}';
 const SCRIPT_ECHELLE=
   '<script>(function(){function k(){'+
@@ -6089,10 +6089,16 @@ function ouvrirDocumentFiche(f,surPlace){
 
 /* ---------- lien de partage ---------- */
 function jetonPlan(){
+  /* 20 caracteres sur un alphabet de 32 : plus de 10^30 combinaisons,
+     largement hors de portee, et l'adresse tient sur une ligne. */
   const a='abcdefghijkmnpqrstuvwxyz23456789';
   let j='';
-  for(let i=0;i<32;i++)j+=a[Math.floor(Math.random()*a.length)];
+  for(let i=0;i<20;i++)j+=a[Math.floor(Math.random()*a.length)];
   return j;
+}
+function lienPlan(jeton){
+  const base=location.pathname.replace(/[^/]*$/,'');
+  return location.origin+base+'p.html#'+jeton;
 }
 async function partagerFiche(id){
   if(!sbPret()){toast('Rejoignez une \u00e9quipe pour partager un lien');return}
@@ -6105,7 +6111,6 @@ async function partagerFiche(id){
       titre:f.titre,donnees:f});
     if(error)throw error;
   }catch(e){ toast('Lien non cr\u00e9\u00e9 : '+(e.message||'')); return }
-  const base=location.pathname.replace(/[^/]*$/,'');
   lpTitre=f.titre+' \u2014 Aff\u00fbt';
   /* « Fiche observation : Sanglier » sonne administratif ; on dit ce
      qui s'est passe. */
@@ -6114,8 +6119,8 @@ async function partagerFiche(id){
     : f.titre+' '+(f.nature==='Pr\u00e9l\u00e8vement'?'pr\u00e9lev\u00e9':
         f.nature==='Indice'?'\u2014 indice de pr\u00e9sence':'observ\u00e9'))+
     (f.terr?' \u00b7 '+f.terr:'')+
-    '\nPhoto, '+(f.arbre?'mesures':'d\u00e9tails')+' et rep\u00e8res GPS :';
-  $('#lp-lien').value=location.origin+base+'plan.html#plan='+jeton;
+    '.\nPhoto, '+(f.arbre?'mesures':'d\u00e9tails')+' et rep\u00e8res GPS.';
+  $('#lp-lien').value=lienPlan(jeton);
   $('#lp-sous').textContent=f.titre+' \u00b7 valable 90 jours';
   $('#lp-apercu').textContent=lpTexte;
   openSheet('#sh-lien');
@@ -6142,8 +6147,7 @@ async function partagerPlan(opt){
   }catch(e){ toast('Lien non cr\u00e9\u00e9 : '+(e.message||'')); return }
   /* page dediee : la racine du site ne doit pas etre atteignable
      depuis un lien destine a un tiers */
-  const base=location.pathname.replace(/[^/]*$/,'');
-  const lien=location.origin+base+'plan.html#plan='+jeton;
+  const lien=lienPlan(jeton);
   const nAb=plan.arbres.filter(r=>r.action==='abattre').length;
   const nEl=plan.arbres.filter(r=>r.action==='elaguer').length;
   lpTitre=titrePlan(nAb,nEl);
@@ -6151,7 +6155,7 @@ async function partagerPlan(opt){
     (nAb?nAb+' arbre'+(nAb>1?'s':'')+' \u00e0 abattre':'')+
     ((nAb&&nEl)?', ':'')+
     (nEl?nEl+' arbre'+(nEl>1?'s':'')+' \u00e0 \u00e9laguer':'')+
-    '. Carte, rep\u00e8res GPS et photos :';
+    '.\nCarte, rep\u00e8res GPS et photos par arbre.';
   $('#lp-lien').value=lien;
   $('#lp-sous').textContent=lpTitre+' \u00b7 '+plan.arbres.length+' arbre'+
     (plan.arbres.length>1?'s':'')+' \u00b7 valable 90 jours';
@@ -6173,7 +6177,7 @@ function titrePlan(nAb,nEl){
 }
 $('#lp-envoyer').onclick=function(){
   const v=$('#lp-lien').value;
-  const txt=lpTexte+'\n'+v;
+  const txt=v+'\n\n'+lpTexte;
   if(navigator.share){ navigator.share({title:lpTitre,text:txt}).catch(function(){}) }
   else location.href='https://wa.me/?text='+encodeURIComponent(txt);
 };
@@ -6374,9 +6378,8 @@ function ouvrirDocumentPlan(plan,surPlace){
 (async function boot(){
   /* Un ancien lien pointant sur la racine est redirige vers la page
      dediee, qui ne contient pas l'application. */
-  const mp=(location.hash||'').match(/[#&]plan=([a-z0-9]{16,})/i);
-  if(mp){ location.replace(location.pathname.replace(/[^/]*$/,'')+
-    'plan.html#plan='+mp[1]); return }
+  const mp=(location.hash||'').match(/[#&](?:plan=)?([a-z0-9]{16,})/i);
+  if(mp){ location.replace(location.pathname.replace(/[^/]*$/,'')+'p.html#'+mp[1]); return }
   const st=await load();
   if(st&&st.fond&&BASEDEF.some(b=>b[0]===st.fond))aBase=st.fond;
   if(st&&st.calques)aOver=new Set(st.calques);
