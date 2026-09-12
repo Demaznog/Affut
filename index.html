@@ -3197,7 +3197,13 @@ $('#sp-list').onclick=function(e){
   const v=e.target.closest('[data-vig]');
   if(v){e.stopPropagation();ouvrirPhoto(v.dataset.vig);return}
   const b=e.target.closest('[data-sp]');if(!b)return;
-  draft.sp=b.dataset.sp;draft.comp={};draft.eff=0;closeSheet('#sh-species');openEntry()};
+  draft.sp=b.dataset.sp;
+  if(draft.kind==='a'){ draft.comp={ind:1}; draft.eff=1 }
+  else { draft.comp={}; draft.eff=0 }
+  /* les vues deja prises suivent : sans cela elles etaient jetees */
+  verserLotDansBrouillon();
+  $('#sp-ia').innerHTML='';
+  closeSheet('#sh-species');openEntry()};
 /* La nature de la fiche se choisissait apres l'espece : les essences
    restaient donc inaccessibles. Ce selecteur ouvre les deux catalogues
    des l'ecran de choix. */
@@ -7026,7 +7032,7 @@ $('#sp-ia').onclick=function(e){
     const code=ajouterEssence(a.dataset.add,a.dataset.nom,a.dataset.fam||null);
     draft.sp=code; draft.comp={ind:1}; draft.eff=1;
     poserNoteFlore(a.dataset.add);
-    lotPhotos=[];
+    verserLotDansBrouillon();
     $('#sp-ia').innerHTML='';closeSheet('#sh-species');openEntry();
     toast(SP[code].nom+' ajout\u00e9 au catalogue');
     return;
@@ -7037,7 +7043,7 @@ $('#sp-ia').onclick=function(e){
     if(draft.kind==='a'){ draft.comp={ind:1}; draft.eff=1;
       poserNoteFlore(SP[b.dataset.cand]&&SP[b.dataset.cand].latin) }
     else { draft.comp={}; draft.eff=0 }
-    lotPhotos=[];
+    verserLotDansBrouillon();
     $('#sp-ia').innerHTML='';closeSheet('#sh-species');openEntry();
   }
 };
@@ -7099,13 +7105,12 @@ function renderLot(){
     '</div>';
 }
 let identifEnCours=false;
-async function lancerIdentificationLot(){
-  if(!lotPhotos.length||identifEnCours)return;
-  identifEnCours=true;
-  const b=document.querySelector('[data-lotgo]');
-  if(b){b.disabled=true;b.textContent='Analyse en cours\u2026'}
-  /* les vues photographiees ici alimentent aussi la fiche : on ne
-     redemande pas a l'utilisateur de refaire le meme geste */
+/* Les vues prises sur l'ecran d'espece rejoignent le brouillon des
+   qu'une espece est retenue — par identification ou par choix manuel
+   dans la liste. Sans cela, une photo suivie d'un choix a la main
+   etait perdue sans un mot. */
+function verserLotDansBrouillon(){
+  if(!draft||!lotPhotos.length)return;
   draft.photos=draft.photos||[];
   const roles=['ensemble','detail'];
   lotPhotos.forEach(function(p,i){
@@ -7113,6 +7118,17 @@ async function lancerIdentificationLot(){
     draft.photos=draft.photos.filter(x=>x.role!==role);
     draft.photos.push({role:role,vignette:p.url,attente:true,b64:p.b64});
   });
+  lotPhotos=[];
+}
+async function lancerIdentificationLot(){
+  if(!lotPhotos.length||identifEnCours)return;
+  identifEnCours=true;
+  const b=document.querySelector('[data-lotgo]');
+  if(b){b.disabled=true;b.textContent='Analyse en cours\u2026'}
+  /* les vues alimentent la fiche ; l'identification en garde une copie */
+  const vues=lotPhotos.slice();
+  verserLotDansBrouillon();
+  lotPhotos=vues;
   try{
     await identifierArbre(lotPhotos[lotPhotos.length-1].b64, lotPhotos[0].url);
   }finally{
