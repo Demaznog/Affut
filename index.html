@@ -294,6 +294,9 @@ body.attente{opacity:.5}
   border:1px solid var(--trait);display:grid;place-items:center;font-size:19px;color:var(--brume-2)}
 .phbox .phdel{flex:none;width:30px;height:30px;border-radius:50%;background:rgba(193,83,70,.18);
   color:var(--sang);display:grid;place-items:center;font-size:14px}
+.phabs{width:100%;padding:22px 18px;border-radius:18px;background:var(--anthracite-2);
+  border:1px dashed var(--trait2);color:var(--brume-2);font-size:12.5px;line-height:1.5;
+  text-align:center;margin-bottom:8px}
 .phvue{width:100%;border-radius:18px;margin-bottom:8px;display:block;background:var(--anthracite-2)}
 .phattente{font-family:var(--mono);font-size:10.5px;color:var(--ambre);margin-top:-2px;margin-bottom:8px}
 .marq{display:flex;align-items:center;gap:11px;width:100%;padding:11px 13px;border-radius:15px;
@@ -3521,7 +3524,11 @@ function octetsDeB64(b64){
 /* ---------- envoi ---------- */
 async function envoyerPhoto(entree){
   if(!sbPret())return false;
-  const chemin=ST.equipe.id+'/'+entree.fiche+'/'+entree.role+'.jpg';
+  /* Le chemin porte la fiche, pas l'equipe : une fiche partagee entre
+     deux equipes deposait sa photo sous la seule equipe active, et les
+     autres membres ne pouvaient pas la lire. Le droit se deduit
+     desormais de la fiche elle-meme. */
+  const chemin='f/'+entree.fiche+'/'+entree.role+'.jpg';
   const {error}=await sb.storage.from('photos')
     .upload(chemin, octetsDeB64(entree.b64), {contentType:'image/jpeg',upsert:true});
   if(error)throw error;
@@ -3569,11 +3576,13 @@ async function urlPhoto(chemin,duree){
 }
 function syncPhotos(){
   const z=$('#e-photos'); if(!z||!draft)return;
+  setTimeout(chargerVignettesDistantes,0);
   const ph=draft.photos||[];
   z.innerHTML=PH_ROLES.map(function(R){
     const p=ph.find(x=>x.role===R.k);
     return '<button class="phbox'+(p?' pleine':'')+'" data-ph="'+R.k+'">'+
-      (p&&p.vignette?'<img src="'+p.vignette+'" alt="">':'')+
+      (p?(p.vignette?'<img src="'+p.vignette+'" alt="">'
+                    :'<img data-phch="'+esc(p.chemin||'')+'" alt="">'):'')+
       '<span class="phlab"><b>'+R.n+'</b><span>'+
         (p ? (R.garde ? (p.attente?'en attente d\u2019envoi':'conserv\u00e9e')
                       : 'analys\u00e9e, non conserv\u00e9e')
@@ -3909,6 +3918,24 @@ $('#e-cernes').oninput=function(e){
   if(e.target.id==='cer-c')draft.cernes.circ=parseFloat(e.target.value)||null;
   $('#e-age').innerHTML=blocAge(draft);
 };
+/* Une fiche recue d'un autre membre n'a pas de vignette locale : on va
+   chercher l'image par son adresse signee. */
+function marquerPhotoIllisible(im){
+  /* plutot qu'un cadre vide : on dit pourquoi */
+  const d=document.createElement('div');
+  d.className='phabs';
+  d.textContent='Photo inaccessible \u2014 synchronisez, ou demandez \u00e0 l\u2019auteur '+
+    'de renvoyer sa fiche.';
+  if(im.parentNode)im.parentNode.replaceChild(d,im);
+}
+function chargerVignettesDistantes(){
+  document.querySelectorAll('img[data-phch]').forEach(function(im){
+    const ch=im.dataset.phch; if(!ch)return;
+    im.removeAttribute('data-phch');
+    urlPhoto(ch).then(function(u){ if(u)im.src=u })
+      .catch(function(){});
+  });
+}
 function blocAge(r){
   const mi=(MILIEUX.find(m=>m.k===r.milieu)||{}).f;
   const a=ageArbre(r.sp,r.circ,mi,r.mes,r.cernes);
@@ -4184,7 +4211,11 @@ function openDetail(id){
   if(zp){
     zp.querySelectorAll('img[data-ch]').forEach(function(im){
       const ch=im.dataset.ch;
-      if(ch)urlPhoto(ch).then(function(u){ if(u)im.src=u });
+      if(!ch)return;
+      urlPhoto(ch).then(function(u){
+        if(u){ im.src=u; im.onerror=function(){ marquerPhotoIllisible(im) } }
+        else marquerPhotoIllisible(im);
+      }).catch(function(){ marquerPhotoIllisible(im) });
     });
   }
   const bq=document.getElementById('d-quand');
