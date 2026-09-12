@@ -3561,6 +3561,20 @@ async function viderFilePhotos(silencieux){
   let envoyees=0, restant=0;
   try{
     const lot=await fileLire();
+    /* La regle d'acces exige que la fiche existe en base avant sa photo :
+       sans elle, le depot est refuse. On pousse donc d'abord les fiches
+       concernees, une par une, sans attendre la synchronisation generale. */
+    if(lot.length){
+      for(const e of lot){
+        const r=ST.recs.find(x=>x.sid===e.fiche||x.id===e.local);
+        if(!r)continue;
+        if(!r.sid)r.sid=e.fiche;
+        try{
+          const {error}=await sb.from('fiche').upsert(ficheVers(r),{onConflict:'id'});
+          if(!error)r.maj=0;
+        }catch(err){}
+      }
+    }
     for(const e of lot){
       try{
         const chemin=await envoyerPhoto(e);
@@ -3570,8 +3584,14 @@ async function viderFilePhotos(silencieux){
           r.photos.push({role:e.role,chemin:chemin,vignette:e.vignette});
           marquer(r);
         }
-        await fileRetirer(e.id); envoyees++;
-      }catch(err){ restant++; phDernierEchec=(err&&(err.message||err.error))||'refus\u00e9'; }
+        await fileRetirer(e.id); envoyees++; phDernierEchec=null;
+      }catch(err){
+        restant++;
+        const m=(err&&(err.message||err.error))||'refus\u00e9';
+        phDernierEchec=/row-level security/i.test(m)
+          ? 'fiche absente du serveur \u2014 synchronisez d\u2019abord'
+          : m;
+      }
     }
     if(envoyees){ await save(); synchroniser(true);
       if(!silencieux)toast(envoyees+' photo'+(envoyees>1?'s':'')+' envoy\u00e9e'+(envoyees>1?'s':'')); }
