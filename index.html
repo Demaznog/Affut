@@ -828,7 +828,9 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div class="sub">Où en est le partage</div></div>
     <button class="link" data-close="1">Fermer</button></div>
   <div class="sbody"><div id="dp-corps"></div></div>
-  <div class="sfoot"><button class="big primary" id="dp-renvoyer">Renvoyer les photos en attente</button></div>
+  <div class="sfoot" style="flex-wrap:wrap;gap:8px">
+    <button class="big ghost" id="dp-anciennes" style="display:none;flex:1 1 100%">Reprendre les photos restées sur l'appareil</button>
+    <button class="big primary" id="dp-renvoyer" style="flex:1">Renvoyer les photos en attente</button></div>
 </div>
 
 <div class="sheet short" id="sh-lien">
@@ -5143,8 +5145,14 @@ function batDepuis(l,ex){
 }
 
 /* ---------- synchronisation ---------- */
+let syncRedemande=false;
 async function synchroniser(silencieux){
-  if(!sbPret()||syncEnCours||!navigator.onLine)return;
+  if(!sbPret()||!navigator.onLine)return;
+  /* Une demande arrivee pendant une synchronisation etait purement
+     abandonnee. C'est ainsi que le chemin d'une photo, ecrit juste apres
+     l'enregistrement de la fiche, ne partait jamais : les autres membres
+     recevaient la fiche sans sa photo. On rejoue a la fin. */
+  if(syncEnCours){ syncRedemande=true; return }
   syncEnCours=true; syncEtat('en cours');
   try{
     /* 1. envoi de ce qui a change ici */
@@ -5189,7 +5197,10 @@ async function synchroniser(silencieux){
       derniereErreurSync=m;
       toast('Partage en \u00e9chec : '+m);
     }
-  }finally{ syncEnCours=false }
+  }finally{
+    syncEnCours=false;
+    if(syncRedemande){ syncRedemande=false; setTimeout(function(){synchroniser(true)},400) }
+  }
 }
 
 function fusionner(table,l){
@@ -5444,8 +5455,9 @@ async function diagPhotos(){
   let attente=[];
   try{ attente=await fileLire() }catch(e){}
   dit('Photos en attente d\u2019envoi',attente.length,attente.length===0);
-  const locales=ST.recs.filter(r=>(r.photos||[]).some(p=>p.attente&&!p.chemin)).length;
+  const locales=ST.recs.filter(r=>(r.photos||[]).some(p=>!p.chemin)).length;
   dit('Fiches dont la photo n\u2019est pas partie',locales,locales===0);
+  const b=$('#dp-anciennes'); if(b)b.style.display=locales?'block':'none';
   const parties=ST.recs.filter(r=>(r.photos||[]).some(p=>p.chemin)).length;
   dit('Fiches avec photo sur le serveur',parties);
   if(phDernierEchec)dit('Dernier refus',phDernierEchec,false);
@@ -5521,6 +5533,36 @@ async function diagPhotos(){
       'synchroniser, puis rouvrez la fiche.';
   z.innerHTML=l.join('')+'<div class="note">'+conseil+'</div>';
 }
+/* Les photos prises avant la correction du chemin n'ont jamais atteint
+   le serveur : leur image pleine est perdue, mais la vignette conservee
+   localement peut encore etre partagee. Mieux qu'un cadre vide. */
+async function reprendreAnciennes(){
+  const l=ST.recs.filter(r=>(r.photos||[]).some(p=>!p.chemin&&p.vignette));
+  if(!l.length){toast('Aucune photo \u00e0 reprendre');return}
+  askConfirm('Reprendre '+l.length+' photo'+(l.length>1?'s':''),
+    'Ces photos n\u2019ont jamais atteint le serveur. Seule leur vignette subsiste : '+
+    'elles seront partag\u00e9es en qualit\u00e9 r\u00e9duite. Pour les arbres qui comptent, '+
+    'reprenez plut\u00f4t la photo sur place.','Reprendre',async function(){
+      let n=0;
+      for(const r of l){
+        if(!r.sid)r.sid=uuid4();
+        for(const p of (r.photos||[])){
+          if(p.chemin||!p.vignette)continue;
+          const b64=String(p.vignette).split(',')[1];
+          if(!b64)continue;
+          try{
+            await fileMettre({id:r.sid+':'+p.role,fiche:r.sid,local:r.id,
+              role:p.role,b64:b64,vignette:p.vignette});
+            n++;
+          }catch(e){}
+        }
+      }
+      if(!n){toast('Rien n\u2019a pu \u00eatre repris');return}
+      await viderFilePhotos(false);
+      diagPhotos();
+    });
+}
+$('#dp-anciennes').onclick=reprendreAnciennes;
 $('#dp-renvoyer').onclick=async function(){
   phDernierEchec=null;
   await viderFilePhotos(false);
