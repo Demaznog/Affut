@@ -294,6 +294,10 @@ body.attente{opacity:.5}
   border:1px solid var(--trait);display:grid;place-items:center;font-size:19px;color:var(--brume-2)}
 .phbox .phdel{flex:none;width:30px;height:30px;border-radius:50%;background:rgba(193,83,70,.18);
   color:var(--sang);display:grid;place-items:center;font-size:14px}
+.phj{font-family:var(--mono);font-size:10.5px;line-height:1.75;color:var(--brume-2);
+  max-height:210px;overflow:auto;background:var(--anthracite-2);border-radius:12px;
+  padding:10px 12px}
+.phj span{color:var(--foret-clair)}
 .dpl{display:flex;align-items:baseline;gap:10px;padding:11px 0;
   border-bottom:1px solid var(--trait)}
 .dpl:last-of-type{border-bottom:0}
@@ -3559,6 +3563,16 @@ async function envoyerPhoto(entree){
   return chemin;
 }
 /* Rattrapage : tout ce qui attend part des que le reseau revient. */
+/* Journal des operations sur les photos. Sans lui, une photo perdue
+   ne laisse aucune trace et l'on en est reduit aux conjectures. */
+let phJournal=[];
+function phNote(quoi,detail){
+  phJournal.push({t:Date.now(),quoi:quoi,detail:detail||''});
+  if(phJournal.length>60)phJournal.shift();
+  try{locSet('affut:phjournal',JSON.stringify(phJournal))}catch(e){}
+}
+try{ phJournal=JSON.parse(locGet('affut:phjournal')||'[]') }catch(e){ phJournal=[] }
+
 let phEnCours=false;
 let phDernierEchec=null;   /* message du dernier refus de depot */
 async function viderFilePhotos(silencieux){
@@ -3573,7 +3587,14 @@ async function viderFilePhotos(silencieux){
     if(lot.length){
       for(const e of lot){
         const r=ST.recs.find(x=>x.sid===e.fiche||x.id===e.local);
-        if(!r)continue;
+        if(!r){
+          /* prise de vue abandonnee avant enregistrement : on laisse
+             quelques heures au cas ou, puis on libere la place */
+          const age=Date.now()-(e.pose||0);
+          if(e.pose&&age>6*3600e3){ await fileRetirer(e.id); phNote('photo orpheline \u00e9cart\u00e9e',e.role) }
+          else phNote('fiche pas encore enregistr\u00e9e',e.fiche);
+          continue;
+        }
         if(!r.sid)r.sid=e.fiche;
         try{
           const {error}=await sb.from('fiche').upsert(ficheVers(r),{onConflict:'id'});
@@ -3584,6 +3605,7 @@ async function viderFilePhotos(silencieux){
     for(const e of lot){
       try{
         const chemin=await envoyerPhoto(e);
+        phNote('depot reussi',chemin);
         const r=ST.recs.find(x=>x.sid===e.fiche||x.id===e.local);
         if(r){
           r.photos=(r.photos||[]).filter(p=>p.role!==e.role);
@@ -4034,6 +4056,8 @@ $('#ph-file').onchange=async function(e){
     const p=await preparerPhoto(f);
     draft.photos=(draft.photos||[]).filter(x=>x.role!==phRole);
     draft.photos.push({role:phRole,vignette:p.vignette,attente:true,b64:p.b64});
+    phNote('photo prise',phRole);
+    mettreEnFileTot();
     syncPhotos();
     /* l'analyse ne part que sur le detail : c'est lui qui identifie */
     if(phRole==='detail'&&(RELAIS||CLE))identifier(p.b64,p.vignette);
@@ -4154,10 +4178,12 @@ $('#e-save').onclick=function(){
   /* les images quittent le brouillon : elles passent en file d'attente,
      le stockage du navigateur ne pourrait pas les porter. */
   const aEnvoyer=(r.photos||[]).filter(p=>p.b64&&PH_GARDEES.indexOf(p.role)>-1);
+  phNote('enregistrement',(r.photos||[]).length+' photo(s), '+aEnvoyer.length+' avec image');
   r.photos=(r.photos||[]).filter(p=>PH_GARDEES.indexOf(p.role)>-1)
     .map(p=>({role:p.role,vignette:p.vignette,chemin:p.chemin||null,attente:!p.chemin}));
   if(aEnvoyer.length){
     if(!r.sid)r.sid=uuid4();
+    phNote('fiche enregistree',r.sid);
     Promise.all(aEnvoyer.map(p=>fileMettre({id:r.sid+':'+p.role,fiche:r.sid,local:r.id,
       role:p.role,b64:p.b64,vignette:p.vignette})))
       .then(function(){ viderFilePhotos(true) })
@@ -5480,7 +5506,9 @@ async function diagPhotos(){
 
   let attente=[];
   try{ attente=await fileLire() }catch(e){}
+  const orphelines=attente.filter(e=>!ST.recs.some(r=>r.sid===e.fiche||r.id===e.local));
   dit('Photos en attente d\u2019envoi',attente.length,attente.length===0);
+  if(orphelines.length)dit('dont sans fiche enregistr\u00e9e',orphelines.length,false);
   const locales=ST.recs.filter(r=>(r.photos||[]).some(p=>!p.chemin)).length;
   dit('Fiches dont la photo n\u2019est pas partie',locales,locales===0);
   const b=$('#dp-anciennes'); if(b)b.style.display=locales?'block':'none';
@@ -5542,6 +5570,14 @@ async function diagPhotos(){
     }catch(e){ lecture='erreur \u2014 '+(e.message||'') }
     dit('Lecture d\u2019une photo',lecture,/accept/.test(lecture));
     try{ await sb.storage.from('photos').remove([temoin]) }catch(e){}
+  }
+  if(phJournal.length){
+    l.push('<div class="lab" style="margin-top:18px">Derni\u00e8res op\u00e9rations</div>');
+    l.push('<div class="phj">'+phJournal.slice(-14).reverse().map(function(e){
+      const d=new Date(e.t);
+      return '<div><span>'+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())+
+        '</span> '+esc(e.quoi)+(e.detail?' \u00b7 '+esc(String(e.detail).slice(0,46)):'')+'</div>';
+    }).join('')+'</div>');
   }
   const conseil = (ok&&temoin===ancien)
     ? 'Le serveur accepte l\u2019ancien format mais refuse le nouveau : ex\u00e9cutez '+
@@ -7118,7 +7154,25 @@ function verserLotDansBrouillon(){
     draft.photos=draft.photos.filter(x=>x.role!==role);
     draft.photos.push({role:role,vignette:p.url,attente:true,b64:p.b64});
   });
+  phNote('vues vers brouillon',lotPhotos.length+' vue(s)');
   lotPhotos=[];
+  mettreEnFileTot();
+}
+/* La photo rejoint la file d'attente des sa prise, sans attendre
+   l'enregistrement : quel que soit le parcours suivi ensuite, elle ne
+   peut plus etre perdue. La fiche recoit son identifiant tout de suite. */
+async function mettreEnFileTot(){
+  if(!draft)return;
+  const l=(draft.photos||[]).filter(p=>p.b64&&PH_GARDEES.indexOf(p.role)>-1);
+  if(!l.length)return;
+  if(!draft.sid)draft.sid=uuid4();
+  for(const p of l){
+    try{
+      await fileMettre({id:draft.sid+':'+p.role,fiche:draft.sid,local:draft.id||null,
+        role:p.role,b64:p.b64,vignette:p.vignette,pose:Date.now()});
+      phNote('mise en file',p.role);
+    }catch(e){ phNote('file refusee',(e&&e.message)||'') }
+  }
 }
 async function lancerIdentificationLot(){
   if(!lotPhotos.length||identifEnCours)return;
