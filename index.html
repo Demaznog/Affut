@@ -5456,17 +5456,43 @@ async function diagPhotos(){
       'les photos restent sur cet appareil.</div>';
     return;
   }
-  /* essai reel de depot puis de lecture, sur un fichier temoin */
-  const temoin='f/diagnostic/test.jpg';
+  /* Le temoin doit porter l'identifiant d'une fiche reelle : la regle
+     d'acces verifie que la fiche existe et qu'on y a droit. Un nom
+     fantaisiste serait refuse meme sur un serveur bien configure. */
+  const ref=ST.recs.find(r=>r.sid&&!r.del);
+  if(!ref){
+    dit('Test de d\u00e9p\u00f4t','impossible \u2014 aucune fiche synchronis\u00e9e');
+    z.innerHTML=l.join('')+'<div class="note">Enregistrez une observation et '+
+      'synchronisez, puis revenez : le contr\u00f4le a besoin d\u2019une fiche pour '+
+      'tester les droits.</div>';
+    return;
+  }
   const octets=new Uint8Array([255,216,255,217]);
-  let depot='non test\u00e9', lecture='non test\u00e9e', ok=null;
-  try{
-    const {error}=await sb.storage.from('photos').upload(temoin,octets,
-      {contentType:'image/jpeg',upsert:true});
-    if(error){ depot='refus\u00e9 \u2014 '+(error.message||''); ok=false }
-    else { depot='accept\u00e9'; ok=true }
-  }catch(e){ depot='erreur \u2014 '+(e.message||''); ok=false }
-  dit('D\u00e9p\u00f4t d\u2019une photo',depot,ok);
+  const essai=async function(chemin){
+    try{
+      const {error}=await sb.storage.from('photos').upload(chemin,octets,
+        {contentType:'image/jpeg',upsert:true});
+      return error?{ok:false,msg:error.message||'refus\u00e9'}:{ok:true};
+    }catch(e){ return {ok:false,msg:e.message||'erreur'} }
+  };
+  const nouveau='f/'+ref.sid+'/diag.jpg';
+  const ancien=ST.equipe.id+'/'+ref.sid+'/diag.jpg';
+  let temoin=nouveau, lecture='non test\u00e9e', ok=null;
+  let r1=await essai(nouveau);
+  if(r1.ok){ dit('D\u00e9p\u00f4t d\u2019une photo','accept\u00e9',true); ok=true }
+  else{
+    /* on regarde si l'ancien format passe encore : cela dirait que la
+       migration des photos n'est pas appliquee */
+    const r2=await essai(ancien);
+    if(r2.ok){
+      temoin=ancien; ok=true;
+      dit('D\u00e9p\u00f4t d\u2019une photo','accept\u00e9 (ancien format)',null);
+      dit('Nouveau format','refus\u00e9',false);
+    }else{
+      ok=false;
+      dit('D\u00e9p\u00f4t d\u2019une photo','refus\u00e9 \u2014 '+r1.msg,false);
+    }
+  }
   if(ok){
     try{
       const {data,error}=await sb.storage.from('photos').createSignedUrl(temoin,60);
@@ -5479,9 +5505,13 @@ async function diagPhotos(){
     dit('Lecture d\u2019une photo',lecture,/accept/.test(lecture));
     try{ await sb.storage.from('photos').remove([temoin]) }catch(e){}
   }
-  const conseil = ok===false
-    ? 'Le serveur refuse le d\u00e9p\u00f4t. La migration des photos n\u2019a probablement pas '+
-      '\u00e9t\u00e9 ex\u00e9cut\u00e9e, ou le bucket \u00ab photos \u00bb n\u2019existe pas.'
+  const conseil = (ok&&temoin===ancien)
+    ? 'Le serveur accepte l\u2019ancien format mais refuse le nouveau : ex\u00e9cutez '+
+      'migration-photos-2.sql. Sans elle, une photo prise sur un territoire '+
+      'partag\u00e9 reste invisible pour l\u2019autre \u00e9quipe.'
+    : ok===false
+    ? 'Le serveur refuse tout d\u00e9p\u00f4t. V\u00e9rifiez que le bucket \u00ab photos \u00bb '+
+      'existe et que les migrations des photos ont \u00e9t\u00e9 ex\u00e9cut\u00e9es.'
     : /refus/.test(lecture)
     ? 'Le d\u00e9p\u00f4t passe mais la lecture est refus\u00e9e : les r\u00e8gles d\u2019acc\u00e8s au '+
       'bucket sont \u00e0 mettre \u00e0 jour.'
