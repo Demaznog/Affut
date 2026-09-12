@@ -294,6 +294,13 @@ body.attente{opacity:.5}
   border:1px solid var(--trait);display:grid;place-items:center;font-size:19px;color:var(--brume-2)}
 .phbox .phdel{flex:none;width:30px;height:30px;border-radius:50%;background:rgba(193,83,70,.18);
   color:var(--sang);display:grid;place-items:center;font-size:14px}
+.dpl{display:flex;align-items:baseline;gap:10px;padding:11px 0;
+  border-bottom:1px solid var(--trait)}
+.dpl:last-of-type{border-bottom:0}
+.dpl span{flex:1;font-size:13.5px;color:var(--brume-2)}
+.dpl b{font-family:var(--mono);font-size:13px;text-align:right;max-width:52%}
+.dpl.ok b{color:var(--foret-clair)}
+.dpl.ko b{color:var(--sang)}
 .phabs{width:100%;padding:22px 18px;border-radius:18px;background:var(--anthracite-2);
   border:1px dashed var(--trait2);color:var(--brume-2);font-size:12.5px;line-height:1.5;
   text-align:center;margin-bottom:8px}
@@ -813,6 +820,15 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   </div>
   <div class="sfoot"><button class="big ghost" data-close="1">Annuler</button>
     <button class="big primary" id="eq-ok">Continuer</button></div>
+</div>
+
+<div class="sheet short" id="sh-diagphoto">
+  <div class="grab"></div>
+  <div class="shead"><div style="flex:1"><h2>État des photos</h2>
+    <div class="sub">Où en est le partage</div></div>
+    <button class="link" data-close="1">Fermer</button></div>
+  <div class="sbody"><div id="dp-corps"></div></div>
+  <div class="sfoot"><button class="big primary" id="dp-renvoyer">Renvoyer les photos en attente</button></div>
 </div>
 
 <div class="sheet short" id="sh-lien">
@@ -3536,6 +3552,7 @@ async function envoyerPhoto(entree){
 }
 /* Rattrapage : tout ce qui attend part des que le reseau revient. */
 let phEnCours=false;
+let phDernierEchec=null;   /* message du dernier refus de depot */
 async function viderFilePhotos(silencieux){
   if(phEnCours||!sbPret()||!navigator.onLine)return;
   phEnCours=true;
@@ -3552,7 +3569,7 @@ async function viderFilePhotos(silencieux){
           marquer(r);
         }
         await fileRetirer(e.id); envoyees++;
-      }catch(err){ restant++ }
+      }catch(err){ restant++; phDernierEchec=(err&&(err.message||err.error))||'refus\u00e9'; }
     }
     if(envoyees){ await save(); synchroniser(true);
       if(!silencieux)toast(envoyees+' photo'+(envoyees>1?'s':'')+' envoy\u00e9e'+(envoyees>1?'s':'')); }
@@ -5416,6 +5433,69 @@ function ouvrirSocle(id){
       save(); renderEquipes(); toast(e.nom+' devient l\u2019\u00e9quipe par d\u00e9faut');
     });
 }
+async function diagPhotos(){
+  const z=$('#dp-corps'); if(!z)return;
+  openSheet('#sh-diagphoto');
+  z.innerHTML='<div class="empty" style="padding:18px">Contr\u00f4le en cours\u2026</div>';
+  const l=[];
+  const dit=(k,v,ok)=>l.push('<div class="dpl'+(ok===false?' ko':ok===true?' ok':'')+'">'+
+    '<span>'+k+'</span><b>'+esc(String(v))+'</b></div>');
+
+  let attente=[];
+  try{ attente=await fileLire() }catch(e){}
+  dit('Photos en attente d\u2019envoi',attente.length,attente.length===0);
+  const locales=ST.recs.filter(r=>(r.photos||[]).some(p=>p.attente&&!p.chemin)).length;
+  dit('Fiches dont la photo n\u2019est pas partie',locales,locales===0);
+  const parties=ST.recs.filter(r=>(r.photos||[]).some(p=>p.chemin)).length;
+  dit('Fiches avec photo sur le serveur',parties);
+  if(phDernierEchec)dit('Dernier refus',phDernierEchec,false);
+
+  if(!sbPret()){
+    dit('\u00c9quipe','aucune',false);
+    z.innerHTML=l.join('')+'<div class="note">Rejoignez une \u00e9quipe : sans elle, '+
+      'les photos restent sur cet appareil.</div>';
+    return;
+  }
+  /* essai reel de depot puis de lecture, sur un fichier temoin */
+  const temoin='f/diagnostic/test.jpg';
+  const octets=new Uint8Array([255,216,255,217]);
+  let depot='non test\u00e9', lecture='non test\u00e9e', ok=null;
+  try{
+    const {error}=await sb.storage.from('photos').upload(temoin,octets,
+      {contentType:'image/jpeg',upsert:true});
+    if(error){ depot='refus\u00e9 \u2014 '+(error.message||''); ok=false }
+    else { depot='accept\u00e9'; ok=true }
+  }catch(e){ depot='erreur \u2014 '+(e.message||''); ok=false }
+  dit('D\u00e9p\u00f4t d\u2019une photo',depot,ok);
+  if(ok){
+    try{
+      const {data,error}=await sb.storage.from('photos').createSignedUrl(temoin,60);
+      if(error||!data){ lecture='adresse refus\u00e9e'; }
+      else{
+        const r=await fetch(data.signedUrl,{method:'GET'});
+        lecture=r.ok?'accept\u00e9e':('refus\u00e9e \u2014 code '+r.status);
+      }
+    }catch(e){ lecture='erreur \u2014 '+(e.message||'') }
+    dit('Lecture d\u2019une photo',lecture,/accept/.test(lecture));
+    try{ await sb.storage.from('photos').remove([temoin]) }catch(e){}
+  }
+  const conseil = ok===false
+    ? 'Le serveur refuse le d\u00e9p\u00f4t. La migration des photos n\u2019a probablement pas '+
+      '\u00e9t\u00e9 ex\u00e9cut\u00e9e, ou le bucket \u00ab photos \u00bb n\u2019existe pas.'
+    : /refus/.test(lecture)
+    ? 'Le d\u00e9p\u00f4t passe mais la lecture est refus\u00e9e : les r\u00e8gles d\u2019acc\u00e8s au '+
+      'bucket sont \u00e0 mettre \u00e0 jour.'
+    : attente.length
+    ? 'Des photos attendent encore : touchez \u00ab Renvoyer \u00bb.'
+    : 'Tout est en ordre. Si un membre ne voit pas une photo, faites-lui '+
+      'synchroniser, puis rouvrez la fiche.';
+  z.innerHTML=l.join('')+'<div class="note">'+conseil+'</div>';
+}
+$('#dp-renvoyer').onclick=async function(){
+  phDernierEchec=null;
+  await viderFilePhotos(false);
+  diagPhotos();
+};
 function syncBoutons(){
   const b=$('#eq-boutons'); if(!b)return;
   b.innerHTML= ST.equipe
@@ -5423,6 +5503,7 @@ function syncBoutons(){
       '<button class="chip" id="eq-code-voir">Voir le code</button>'+
       '<button class="chip" id="eq-membres" style="grid-column:1/-1">Membres et droits</button>'+
       '<button class="chip" id="eq-compte" style="grid-column:1/-1">Mon identit\u00e9</button>'+
+      '<button class="chip" id="eq-diagphoto" style="grid-column:1/-1">\u00c9tat des photos</button>'+
 
       '<button class="chip" id="eq-quitter" style="grid-column:1/-1">Quitter '+
         esc((ST.equipe||{}).nom||'l\u2019\u00e9quipe')+'</button>'
@@ -5432,6 +5513,7 @@ function syncBoutons(){
   const v=$('#eq-code-voir'); if(v)v.onclick=montrerCode;
   const mb=$('#eq-membres'); if(mb)mb.onclick=ouvrirMembres;
   const cp=$('#eq-compte'); if(cp)cp.onclick=ouvrirCompte;
+  const dg=$('#eq-diagphoto'); if(dg)dg.onclick=diagPhotos;
   const q=$('#eq-quitter'); if(q)q.onclick=function(){
     askConfirm('Quitter l\u2019\u00e9quipe',
       'Vos fiches restent sur cet appareil et sur le serveur. Vous ne recevrez plus '+
