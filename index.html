@@ -1872,9 +1872,12 @@ function territoireDe(lat,lng){
 const battue=()=>ST.battues.find(b=>b.id===ST.aB)||null;
 const battuesOf=id=>ST.battues.filter(b=>b.terr===id&&id&&id!=='ALL'&&id!=='HORS').sort((a,b)=>b.date.localeCompare(a.date));
 function recsOf(id){
-  if(id==='ALL'||id==null)return ST.recs;
-  if(id==='HORS')return ST.recs.filter(r=>!r.terr);
-  return ST.recs.filter(r=>r.terr===id);
+  /* Une fiche supprimee reste en memoire jusqu'a ce que le serveur en
+     soit informe : elle ne doit plus apparaitre nulle part entre-temps. */
+  const l=ST.recs.filter(r=>!r.del);
+  if(id==='ALL'||id==null)return l;
+  if(id==='HORS')return l.filter(r=>!r.terr);
+  return l.filter(r=>r.terr===id);
 }
 
 /* ---------------------------------------------------------------
@@ -4306,8 +4309,19 @@ function openDetail(id){
 }
 $('#d-edit').onclick=function(){ if(refusLecture())return; if(editing)modifierFiche(editing) };
 $('#d-del').onclick=function(){
-  if(refusLecture())return;const v=ST.recs.find(r=>r.id===editing);
-  if(v&&ST.equipe){marquer(v);v.del=true;synchroniser(true)}
+  if(refusLecture())return;
+  const v=ST.recs.find(r=>r.id===editing);
+  if(v&&ST.equipe){
+    /* La fiche reste dans la liste, marquee supprimee, jusqu'a ce que
+       le serveur en soit informe. La retirer tout de suite faisait
+       disparaitre la suppression avant son envoi : les autres membres
+       continuaient de voir la fiche. */
+    marquer(v); v.del=true; v.purge=Date.now();
+    save(); closeAll(); syncTopbar(); renderAll();
+    toast('Fiche supprim\u00e9e');
+    synchroniser(true);
+    return;
+  }
   ST.recs=ST.recs.filter(r=>r.id!==editing);save();closeAll();
   syncTopbar();renderAll();toast('Fiche supprim\u00e9e')};
 
@@ -5225,14 +5239,32 @@ async function synchroniser(silencieux){
     /* 2. reception de ce qui a change ailleurs */
     const depuis=(ST.sync&&ST.sync.depuis)||'1970-01-01T00:00:00Z';
     let recu=0;
+    /* Le curseur doit venir du serveur, jamais de l'horloge du telephone :
+       un appareil en avance de deux minutes sautait toutes les lignes
+       ecrites pendant ce decalage, et ne les recevait jamais. C'est ainsi
+       qu'un membre se retrouvait avec 12 fiches au lieu de 20. */
+    let bordSup=null;
     for(const table of ['territoire','battue','fiche']){
       const {data,error}=await sb.from(table).select('*')
         .overlaps('equipes',mesEquipes().map(e=>e.id))
         .gt('modifie_le',depuis).order('modifie_le');
       if(error)throw error;
-      (data||[]).forEach(l=>{ if(fusionner(table,l))recu++ });
+      (data||[]).forEach(function(l){
+        if(fusionner(table,l))recu++;
+        if(l.modifie_le&&(!bordSup||l.modifie_le>bordSup))bordSup=l.modifie_le;
+      });
     }
-    ST.sync={depuis:new Date(Date.now()-5000).toISOString()};
+    /* On recule d'une seconde sur la plus recente date recue : deux
+       ecritures a la meme milliseconde ne doivent pas s'exclure. */
+    if(bordSup){
+      ST.sync={depuis:new Date(new Date(bordSup).getTime()-1000).toISOString()};
+    }else if(!ST.sync||!ST.sync.depuis){
+      ST.sync={depuis:'1970-01-01T00:00:00Z'};
+    }
+    /* les suppressions parvenues au serveur peuvent quitter l'appareil */
+    ST.recs=ST.recs.filter(function(r){
+      return !(r.del&&r.purge&&!r.maj&&Date.now()-r.purge>60000);
+    });
     ST.recs.sort((a,b)=>b.t-a.t);
     await save();
     syncEtat();
@@ -5496,6 +5528,26 @@ function ouvrirSocle(id){
       save(); renderEquipes(); toast(e.nom+' devient l\u2019\u00e9quipe par d\u00e9faut');
     });
 }
+/* Reprise complete : on remet le curseur a zero et on relit tout depuis
+   le serveur. C'est le remede quand deux appareils ne montrent pas le
+   meme nombre de fiches. Rien n'est efface : la fusion garde la version
+   la plus recente de chaque cote. */
+async function toutResynchroniser(){
+  if(!sbPret()){toast('Rejoignez une \u00e9quipe d\u2019abord');return}
+  askConfirm('Tout relire depuis le serveur',
+    'Toutes les fiches de vos \u00e9quipes seront relues, y compris les suppressions. '+
+    'Vos observations non encore envoy\u00e9es partiront d\u2019abord. Cela peut prendre '+
+    'une minute.','Relire',async function(){
+      toast('Reprise compl\u00e8te\u2026');
+      /* on pousse d'abord ce qui n'est pas parti */
+      ST.terr.forEach(marquer); ST.battues.forEach(marquer); ST.recs.forEach(marquer);
+      ST.sync={depuis:'1970-01-01T00:00:00Z'};
+      await save();
+      await synchroniser(false);
+      renderAll(); syncTopbar();
+      toast(ST.recs.filter(r=>!r.del).length+' fiches apr\u00e8s reprise');
+    });
+}
 async function diagPhotos(){
   const z=$('#dp-corps'); if(!z)return;
   openSheet('#sh-diagphoto');
@@ -5638,6 +5690,8 @@ function syncBoutons(){
       '<button class="chip" id="eq-membres" style="grid-column:1/-1">Membres et droits</button>'+
       '<button class="chip" id="eq-compte" style="grid-column:1/-1">Mon identit\u00e9</button>'+
       '<button class="chip" id="eq-diagphoto" style="grid-column:1/-1">\u00c9tat des photos</button>'+
+      '<button class="chip" id="eq-toutresync" style="grid-column:1/-1">'+
+        'Tout relire depuis le serveur</button>'+
 
       '<button class="chip" id="eq-quitter" style="grid-column:1/-1">Quitter '+
         esc((ST.equipe||{}).nom||'l\u2019\u00e9quipe')+'</button>'
@@ -5648,6 +5702,7 @@ function syncBoutons(){
   const mb=$('#eq-membres'); if(mb)mb.onclick=ouvrirMembres;
   const cp=$('#eq-compte'); if(cp)cp.onclick=ouvrirCompte;
   const dg=$('#eq-diagphoto'); if(dg)dg.onclick=diagPhotos;
+  const tr=$('#eq-toutresync'); if(tr)tr.onclick=toutResynchroniser;
   const q=$('#eq-quitter'); if(q)q.onclick=function(){
     askConfirm('Quitter l\u2019\u00e9quipe',
       'Vos fiches restent sur cet appareil et sur le serveur. Vous ne recevrez plus '+
