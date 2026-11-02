@@ -1,0 +1,9 @@
+.DS_Store
+
+# Sauvegardes de la base de production : ce sont des données, pas du
+# code. Elles n'ont rien à faire sur GitHub, et surtout pas si le
+# dépôt est public. Les migrations .sql, elles, restent versionnées :
+# ce sont elles qui décrivent le schéma.
+BDD/*/
+*.backup.gz
+*.zip
