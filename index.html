@@ -6719,19 +6719,49 @@ async function monCompte(){
   if(!u)return null;
   return {id:u.id, mail:u.email||null, anonyme:!u.email};
 }
+/* Envoyer un lien de connexion pour une adresse qui a deja un compte. */
+async function connecterCourriel(mail){
+  if(!await sbInit())throw new Error('service injoignable');
+  const {error}=await sb.auth.signInWithOtp({email:mail,
+    options:{emailRedirectTo:location.origin+location.pathname,
+             shouldCreateUser:false}});
+  if(error)throw error;
+  return 'connexion';
+}
+/* ---------------------------------------------------------------
+   Deux situations que l'application confondait.
+
+   Premier appareil : le compte anonyme recoit l'adresse, son
+   identifiant survit, et les fiches gardent leur auteur.
+
+   Appareil suivant : le compte anonyme local est un INCONNU, sans
+   rapport avec celui du telephone. Lui attacher la meme adresse ne
+   peut pas marcher — elle est deja prise — et c'est exactement
+   l'erreur que renvoyait Supabase. Il faut au contraire abandonner
+   ce compte neuf et se connecter a l'ancien.
+
+   On tente donc la conversion, et si l'adresse est deja connue, on
+   bascule sans rien demander sur l'envoi d'un lien de connexion.
+--------------------------------------------------------------- */
+function adresseDejaPrise(e){
+  const m=(String((e&&e.message)||'')+' '+String((e&&e.msg)||'')).toLowerCase();
+  const c=String((e&&e.code)||'');
+  if(c==='email_exists'||c==='user_already_exists')return true;
+  return /already (been )?(registered|taken|in use|exists)|email_exists|address is already/.test(m);
+}
 async function lierCourriel(mail){
   if(!await sbInit())throw new Error('service injoignable');
   const c=await monCompte();
   /* compte anonyme deja en place : on le convertit, l'identifiant survit */
   if(c&&c.anonyme){
     const {error}=await sb.auth.updateUser({email:mail});
-    if(error)throw error;
-    return 'conversion';
+    if(!error)return 'conversion';
+    if(!adresseDejaPrise(error))throw error;
+    /* l'adresse appartient deja a un compte : c'est un second appareil */
+    await connecterCourriel(mail);
+    return 'retrouvaille';
   }
-  const {error}=await sb.auth.signInWithOtp({email:mail,
-    options:{emailRedirectTo:location.origin+location.pathname}});
-  if(error)throw error;
-  return 'connexion';
+  return await connecterCourriel(mail);
 }
 async function ouvrirCompte(){
   if(!await sbInit()){toast('Service injoignable');return}
@@ -6750,19 +6780,83 @@ $('#cp-ok').onclick=async function(){
   if(!courrielValide(m)){toast('Adresse incompl\u00e8te');return}
   $('#cp-ok').disabled=true; $('#cp-ok').textContent='Envoi\u2026';
   try{
-    await lierCourriel(m);
-    $('#cp-etat').innerHTML='<b>Courriel envoy\u00e9 \u00e0 '+esc(m)+'</b>'+
-      '<span>Ouvrez-le depuis ce t\u00e9l\u00e9phone et suivez le lien. '+
-      'Regardez les ind\u00e9sirables si rien n\u2019arrive.</span>';
+    const r=await lierCourriel(m);
+    /* \u00ab retrouvaille \u00bb : l'adresse avait deja un compte, le lien sert
+       a rejoindre celui-la plutot qu'a en baptiser un nouveau. Le dire,
+       parce que ce n'est pas la meme chose pour l'utilisateur. */
+    $('#cp-etat').innerHTML= r==='retrouvaille'
+      ? '<b>Vous avez d\u00e9j\u00e0 un compte \u00e0 cette adresse</b>'+
+        '<span>Un lien de connexion vient de partir vers '+esc(m)+'. '+
+        'Ouvrez-le depuis cet appareil : il deviendra le m\u00eame membre que '+
+        'vos autres appareils, avec les m\u00eames \u00e9quipes et le m\u00eame r\u00f4le.</span>'
+      : '<b>Courriel envoy\u00e9 \u00e0 '+esc(m)+'</b>'+
+        '<span>Ouvrez-le depuis cet appareil et suivez le lien. '+
+        'Regardez les ind\u00e9sirables si rien n\u2019arrive.</span>';
     $('#cp-ok').style.display='none';
   }catch(e){
-    toast(/already/i.test(e.message||'')
-      ? 'Cette adresse est d\u00e9j\u00e0 utilis\u00e9e par un autre membre'
-      : '\u00c9chec : '+(e.message||''));
+    const m2=String(e.message||'');
+    toast(/signups? not allowed|shouldCreateUser|not found/i.test(m2)
+      ? 'Aucun compte \u00e0 cette adresse. V\u00e9rifiez l\u2019orthographe.'
+      : '\u00c9chec : '+m2);
   }finally{
     $('#cp-ok').disabled=false; $('#cp-ok').textContent='Recevoir le lien';
   }
 };
+
+/* ---------------------------------------------------------------
+   RETROUVER SES EQUIPES
+
+   Jusqu'ici la liste des equipes ne vivait que dans le navigateur :
+   l'application n'a jamais su demander au serveur « a quelles equipes
+   ce compte appartient-il ? ». Sur un appareil neuf, se connecter ne
+   servait donc a rien — on arrivait identifie, mais sans equipe, donc
+   sans rien a voir.
+
+   Les regles de lecture le permettaient pourtant depuis le debut :
+   on ne voit que les equipes dont on est membre. Il suffisait de
+   poser la question.
+--------------------------------------------------------------- */
+async function retrouverEquipes(){
+  if(!await sbInit())return 0;
+  let moi=null;
+  try{ const {data}=await sb.auth.getUser(); moi=data&&data.user&&data.user.id }catch(e){}
+  if(!moi)return 0;
+  const {data:adh,error:e1}=await sb.from('membre')
+    .select('equipe_id,nom,role').eq('user_id',moi);
+  if(e1||!adh||!adh.length)return 0;
+  const {data:eqs,error:e2}=await sb.from('equipe')
+    .select('id,nom,code').in('id',adh.map(a=>a.equipe_id));
+  if(e2)return 0;
+  const parId={}; (eqs||[]).forEach(e=>{parId[e.id]=e});
+  const avant=(ST.equipes||[]).length;
+  let ajoutees=0;
+  adh.forEach(function(a){
+    const e=parId[a.equipe_id]; if(!e)return;
+    const connue=(ST.equipes||[]).find(x=>x.id===e.id);
+    /* role historique : « chasseur » valait contributeur */
+    const role=(a.role==='chasseur')?'contrib':a.role;
+    if(connue){
+      connue.nom=e.nom; connue.code=e.code;
+      connue.pseudo=connue.pseudo||a.nom; connue.role=role;
+    }else{
+      ST.equipes=(ST.equipes||[]).concat([{
+        id:e.id, nom:e.nom, code:e.code, pseudo:a.nom, role:role,
+        socle:!(ST.equipes||[]).length
+      }]);
+      ajoutees++;
+    }
+  });
+  if(!(ST.equipes||[]).some(e=>e.socle)&&ST.equipes.length)ST.equipes[0].socle=true;
+  if(!ST.equipe||!ST.equipes.some(e=>e.id===ST.equipeActive)){
+    ST.equipe=ST.equipes[0]||null;
+    ST.equipeActive=ST.equipe?ST.equipe.id:null;
+  }
+  /* un appareil qui decouvre ses equipes doit tout relire, pas
+     seulement les nouveautes */
+  if(ajoutees)ST.sync={depuis:null};
+  if(ajoutees||avant!==(ST.equipes||[]).length)await save();
+  return ajoutees;
+}
 
 /* ---------- adhesion ---------- */
 async function sbCreerEquipe(nom,pseudo){
@@ -7480,6 +7574,8 @@ function syncBoutons(){
       '<button class="chip" id="eq-diagphoto" style="grid-column:1/-1">\u00c9tat des photos</button>'+
       '<button class="chip" id="eq-toutresync" style="grid-column:1/-1">'+
         'Tout relire depuis le serveur</button>'+
+      '<button class="chip" id="eq-retrouver" style="grid-column:1/-1">'+
+        'Retrouver mes \u00e9quipes</button>'+
 
       '<button class="chip" id="eq-quitter" style="grid-column:1/-1">Quitter '+
         esc((ST.equipe||{}).nom||'l\u2019\u00e9quipe')+'</button>'
@@ -7489,6 +7585,24 @@ function syncBoutons(){
   const v=$('#eq-code-voir'); if(v)v.onclick=montrerCode;
   const mb=$('#eq-membres'); if(mb)mb.onclick=ouvrirMembres;
   const cp=$('#eq-compte'); if(cp)cp.onclick=ouvrirCompte;
+  const rt=$('#eq-retrouver'); if(rt)rt.onclick=async function(){
+    rt.disabled=true; const lib=rt.textContent; rt.textContent='Recherche\u2026';
+    try{
+      const c=await (async()=>{ await sbInit(); return monCompte() })();
+      if(!c){toast('Service injoignable');return}
+      if(c.anonyme){
+        toast('Cet appareil n\u2019est li\u00e9 \u00e0 aucune adresse. Passez par \u00ab Mon identit\u00e9 \u00bb.');
+        return;
+      }
+      const n=await retrouverEquipes();
+      if(!n){toast('Aucune \u00e9quipe de plus \u00e0 retrouver');return}
+      syncTopbar(); syncBoutons(); renderEquipes(); renderAll();
+      toast(n+' \u00e9quipe'+(n>1?'s':'')+' retrouv\u00e9e'+(n>1?'s':'')+'\u2026');
+      await synchroniser(true); renderAll(); fitTout();
+      toast(ST.recs.length+' fiche'+(ST.recs.length>1?'s':'')+' en base');
+    }catch(e){ toast('\u00c9chec : '+(e.message||'')) }
+    finally{ rt.disabled=false; rt.textContent=lib }
+  };
   const dg=$('#eq-diagphoto'); if(dg)dg.onclick=diagPhotos;
   const tr=$('#eq-toutresync'); if(tr)tr.onclick=toutResynchroniser;
   const q=$('#eq-quitter'); if(q)q.onclick=function(){
@@ -9872,9 +9986,41 @@ function ouvrirDocumentPlan(plan,surPlace){
   if(/access_token=|type=magiclink|type=email/.test(location.hash||'')){
     sbInit().then(async function(){
       const c=await monCompte();
-      if(c&&c.mail)setTimeout(function(){toast('Identit\u00e9 confirm\u00e9e \u00b7 '+c.mail)},900);
       try{history.replaceState(null,'',location.pathname)}catch(e){}
+      /* Le moment decisif pour un second appareil : on vient d'arriver
+         identifie, mais sans savoir a quelles equipes on appartient.
+         C'est au serveur de le dire, et c'est maintenant. */
+      let n=0;
+      try{ n=await retrouverEquipes() }catch(e){}
+      if(n){
+        syncTopbar(); syncBoutons(); renderAll();
+        setTimeout(function(){
+          toast(n+' \u00e9quipe'+(n>1?'s':'')+' retrouv\u00e9e'+(n>1?'s':'')+
+            ' \u00b7 r\u00e9cup\u00e9ration des fiches\u2026');
+        },700);
+        try{ await synchroniser(true); renderAll(); fitTout();
+             toast(ST.recs.length+' fiche'+(ST.recs.length>1?'s':'')+' r\u00e9cup\u00e9r\u00e9e'+
+                   (ST.recs.length>1?'s':'')) }catch(e){}
+      }else if(c&&c.mail){
+        setTimeout(function(){toast('Identit\u00e9 confirm\u00e9e \u00b7 '+c.mail)},900);
+      }
     });
+  }
+  /* Un appareil deja identifie mais sans equipe locale : meme cas de
+     figure, sans le lien. Cela arrive quand le stockage a ete efface. */
+  else if(!(ST.equipes||[]).length){
+    setTimeout(function(){
+      sbInit().then(async function(){
+        const c=await monCompte();
+        if(!c||c.anonyme)return;          /* compte neuf : rien a retrouver */
+        let n=0;
+        try{ n=await retrouverEquipes() }catch(e){}
+        if(!n)return;
+        syncTopbar(); syncBoutons(); renderAll();
+        toast(n+' \u00e9quipe'+(n>1?'s':'')+' retrouv\u00e9e'+(n>1?'s':'')+'\u2026');
+        try{ await synchroniser(true); renderAll(); fitTout() }catch(e){}
+      });
+    },1200);
   }
   if(ST.equipe){ sbInit().then(function(c){ if(c){rafraichirRole();synchroniser(true);abonner();
     chargerMembres();chargerMessages();
