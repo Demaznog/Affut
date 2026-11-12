@@ -3146,7 +3146,7 @@ function renderBat(){
 function visibleCarte(r){
   return !(r.kind==='a' && r.action==='abattu' && !ST.voirAbattus);
 }
-function renderAllMap(){renderTerr();renderBat();renderRecs()}
+function renderAllMap(){renderTerr();renderBat();renderRecs();renderParcs()}
 
 /* ---------- placement et trace ---------- */
 /* Le point a glisser remplace le reticule : c'est LUI que les
@@ -8873,10 +8873,16 @@ function demarrerCalque(p){
   $('#act-cancel').style.display='flex';
   $('#act-map').style.display='none';$('#typebar').classList.remove('on');
   if(neuve)amenerCalqueIci(true); else dessinerCalque(true);
+  /* Les arbres apparaissent et grossissent avec le zoom : la grille
+     doit donc se redessiner quand on zoome, sinon ils resteraient a
+     la taille du premier cadrage ou absents pour toujours. */
+  SIT.surZoom=function(){ dessinerCalque(false) };
+  try{ map.on('zoomend',SIT.surZoom) }catch(e){}
   showHint('Posez la grille sur vos arbres',
     'Faites glisser le disque plein pour déplacer toute la parcelle, et le '+
     'disque creux au bout de la première ligne pour la faire pivoter. '+
-    'Les lignes doivent tomber sur vos rangées.');
+    'Zoomez jusqu’à voir vos arbres sur la photo, puis faites tomber '+
+    'les ronds dessus.');
 }
 /* Un objet parcelle de travail, pour calculer les positions sans
    toucher a la vraie parcelle tant que rien n'est valide. */
@@ -8885,6 +8891,28 @@ function parcelleEnCours(){
   return {oriLat:SIT.lat, oriLng:SIT.lng, cap:SIT.cap,
           ecartArbre:p.ecartArbre, ecartLigne:p.ecartLigne,
           nbLignes:p.nbLignes, nbArbres:p.nbArbres};
+}
+/* En dessous de ce zoom, les arbres ne se distinguent plus. A 7 m
+   d'ecartement : 6 px au zoom 17, 12 au zoom 18, 24 au zoom 19. Plus
+   bas, quatre cents ronds ne font qu'une tache — on ne les dessine
+   pas, cela couterait sans rien montrer. Le zoom 19 est le dernier
+   que la carte accepte (maxZoom), donc le dernier palier utile. */
+const ZOOM_ARBRES=17;
+function rayonArbre(z){ return z>=19?6:z>=18?4:3 }
+/* Les emplacements d'une parcelle, dans l'ordre de la chaine de
+   relevé : une position et une couleur par arbre reellement plante.
+   Les emplacements jamais plantes — bois, haie, roche affleurante —
+   en sont absents : ils n'ont aucun arbre a faire coincider avec la
+   photo, et les dessiner noierait les autres (229 sur 648 ici). */
+function emplacementsArbres(q,etats){
+  const nl=Math.max(1,q.nbLignes||1), nr=Math.max(1,q.nbArbres||1);
+  const ch=String(etats||''), out=[];
+  for(let i=0;i<nl;i++)for(let j=0;j<nr;j++){
+    const e=ch[i*nr+j]||'?';
+    if(e==='h'||e==='r')continue;
+    out.push({p:posArbre(q,i,j), c:(ETAT_PLACE[e]||ETAT_PLACE['?']).c});
+  }
+  return out;
 }
 function dessinerCalque(refaireLesPoignees){
   if(!SIT)return;
@@ -8897,16 +8925,39 @@ function dessinerCalque(refaireLesPoignees){
         C=posArbre(q,L1-1,0), D=posArbre(q,L1-1,R1-1);
   L.polygon([A,B,D,C],{color:'#7FB8D6',weight:2,fillColor:'#7FB8D6',fillOpacity:.10,
     interactive:false}).addTo(SIT.cal);
-  /* Une ligne par rangee : c'est en les voyant courir le long des
-     rangees d'arbres qu'on sait si l'orientation est juste. Des
-     points, a cette echelle, ne se distinguent pas. */
+  /* Une ligne par rangee : de loin, c'est elle qui dit si
+     l'orientation est juste, en courant le long des rangees. */
   for(let i=0;i<L1;i++){
     L.polyline([posArbre(q,i,0),posArbre(q,i,R1-1)],
       {color:'#CFE6F3',weight:1.2,opacity:.85,interactive:false}).addTo(SIT.cal);
   }
+  /* Et les arbres eux-memes, des qu'on est assez pres pour les
+     distinguer : c'est en les faisant tomber sur les arbres de la
+     photo aerienne qu'on pose la grille juste. On les REPLACE au lieu
+     de les recreer — pendant un glisser, la grille est redessinee a
+     chaque mouvement du doigt, et recreer quatre cents cercles par
+     image saccade sur un telephone. */
+  let z=ZOOM_ARBRES; try{ z=map.getZoom() }catch(e){}
+  const rel=dernierReleve(SIT.id);
+  const emp=(z>=ZOOM_ARBRES)?emplacementsArbres(q,rel?rel.etats:''):[];
+  if(!SIT.arb)SIT.arb=L.layerGroup().addTo(map);
+  if(SIT.pts&&SIT.pts.length===emp.length&&SIT.rayon===rayonArbre(z)){
+    for(let k=0;k<emp.length;k++)SIT.pts[k].setLatLng(emp[k].p);
+  }else{
+    SIT.arb.clearLayers(); SIT.pts=[]; SIT.rayon=rayonArbre(z);
+    for(let k=0;k<emp.length;k++){
+      SIT.pts.push(L.circleMarker(emp[k].p,{radius:SIT.rayon,weight:1,
+        color:'#0B1410',fillColor:emp[k].c,fillOpacity:.95,
+        interactive:false}).addTo(SIT.arb));
+    }
+  }
   const d=distanceLocale(A[0],A[1],B[0],B[1]);
+  /* Si les arbres ne sont pas dessines, on le dit : sans cela, une
+     grille vide se lit comme une panne et non comme un zoom trop
+     large. */
   $('#retinfo').innerHTML=L1+' lignes × '+R1+' arbres · ligne de '+Math.round(d)+' m'+
-    '<br>cap '+Math.round(SIT.cap)+'° · '+dms(SIT.lat,'N','S')+' '+dms(SIT.lng,'E','O');
+    '<br>cap '+Math.round(SIT.cap)+'° · '+dms(SIT.lat,'N','S')+' '+dms(SIT.lng,'E','O')+
+    (emp.length?'':'<br>Zoomez pour voir les arbres un par un');
   if(refaireLesPoignees){
     if(SIT.hA){try{SIT.hA.remove()}catch(e){}}
     if(SIT.hR){try{SIT.hR.remove()}catch(e){}}
@@ -8958,7 +9009,10 @@ function amenerCalqueIci(muet){
 function arreterCalque(){
   if(!SIT)return;
   [SIT.hA,SIT.hR].forEach(function(h){ if(h){try{h.remove()}catch(e){}} });
-  if(SIT.cal){try{map.removeLayer(SIT.cal)}catch(e){}}
+  [SIT.cal,SIT.arb].forEach(function(g){ if(g){try{map.removeLayer(g)}catch(e){}} });
+  /* Le suiveur de zoom meurt avec le calque : laisse en place, il
+     redessinerait une grille qui n'existe plus. */
+  if(SIT.surZoom){try{map.off('zoomend',SIT.surZoom)}catch(e){}}
   SIT=null;
 }
 function validerCalque(){
@@ -8973,18 +9027,52 @@ function validerCalque(){
   toast('Parcelle située');
 }
 /* Montrer la parcelle sur la carte : c'est la reponse a « ou est-elle ». */
-let layParc=null;
+let layParcs=null, suitZoomParcs=false;
+/* Une parcelle situee fait partie du territoire : elle se voit en
+   permanence sur la carte, comme les contours, et non seulement apres
+   un « Voir sur la carte ». C'est aussi ce qui permet de verifier la
+   pose apres coup — les ronds doivent rester sur les arbres. */
+function renderParcs(){
+  if(!map)return;
+  try{
+    if(!layParcs)layParcs=L.layerGroup().addTo(map);
+    layParcs.clearLayers();
+    /* La taille des arbres depend du zoom, donc il faut redessiner en
+       zoomant. Un seul suiveur, pose une fois pour toutes. */
+    if(!suitZoomParcs){ map.on('zoomend',renderParcs); suitZoomParcs=true }
+    let z=0; try{ z=map.getZoom() }catch(e){}
+    let vue=null; try{ vue=map.getBounds() }catch(e){}
+    (ST.parcelles||[]).forEach(function(p){
+      if(p.del)return;
+      const c=coinsParcelle(p); if(!c)return;
+      const bb=L.latLngBounds([c.A,c.B,c.C,c.D]);
+      L.polygon([c.A,c.B,c.D,c.C],{color:'#7FB8D6',weight:2,fillColor:'#7FB8D6',
+        fillOpacity:.14}).addTo(layParcs);
+      L.marker(c.centre,{interactive:false,icon:L.divIcon({className:'etiqparc',
+        iconSize:[0,0],html:'<span>'+esc(p.nom||'Parcelle')+'</span>'})})
+        .addTo(layParcs);
+      if(z<ZOOM_ARBRES)return;
+      /* Hors ecran, quelques centaines de ronds coutent sans rien
+         montrer. Si la carte ne sait pas repondre, on dessine. */
+      let dedans=true;
+      try{ if(vue&&vue.intersects)dedans=vue.intersects(bb) }catch(e){}
+      if(!dedans)return;
+      const rel=dernierReleve(p.id), r=rayonArbre(z);
+      emplacementsArbres(p,rel?rel.etats:'').forEach(function(e){
+        L.circleMarker(e.p,{radius:r,weight:1,color:'#0B1410',
+          fillColor:e.c,fillOpacity:.95,interactive:false}).addTo(layParcs);
+      });
+    });
+  }catch(e){}
+}
+/* Et aller la voir : le cadrage, puis le dessin — dans cet ordre, car
+   le cadrage change le zoom et donc la taille des arbres. */
 function montrerParcelleSurCarte(p){
   try{
-    if(layParc){map.removeLayer(layParc);layParc=null}
     const c=coinsParcelle(p); if(!c)return;
-    layParc=L.layerGroup().addTo(map);
-    L.polygon([c.A,c.B,c.D,c.C],{color:'#7FB8D6',weight:2,fillColor:'#7FB8D6',
-      fillOpacity:.14}).addTo(layParc);
-    L.marker(c.centre,{interactive:false,icon:L.divIcon({className:'etiqparc',
-      iconSize:[0,0],html:'<span>'+esc(p.nom||'Parcelle')+'</span>'})}).addTo(layParc);
     allerVue('map');
     map.fitBounds(L.latLngBounds([c.A,c.B,c.C,c.D]).pad(0.25));
+    renderParcs();
   }catch(e){}
 }
 /* Une parcelle est situee quand on peut placer chacun de ses arbres
@@ -10841,7 +10929,8 @@ brancher('#pa-alerte',function(e){
         marquerParc(p); save(); renderParcelle(); renderAll();
         /* La carte etait restee sur la parcelle mal visee : on la
            ramene a la vue d'ouverture, sinon on contemple un point
-           qui n'existe plus. */
+           qui n'existe plus. renderAll a deja retire contour et
+           arbres : sans origine ni cap, coinsParcelle ne rend rien. */
         recadrerCarte();
         toast('Repères retirés · carte recadrée');
       });
