@@ -1574,6 +1574,8 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
 
     <div class="lab">Documents</div>
     <div class="chipgrid">
+      <!-- Le plan nu : rien que la carte et les chiffres. -->
+      <button class="chip" id="pa-doc-plan" style="grid-column:1/-1">Plan et chiffres &#8212; sans commentaire</button>
       <button class="chip" id="pa-doc-fiche" style="grid-column:1/-1">Fiche de relevé à imprimer</button>
       <button class="chip" id="pa-doc-repl" style="grid-column:1/-1">Plan de replantation</button>
       <button class="chip" id="pa-doc-elag" style="grid-column:1/-1">Plan d'élagage</button>
@@ -8636,14 +8638,17 @@ function dateLongue(d){
 }
 function enteteDoc(p,titre,soustitre,an){
   const sp=p.essence?SP[p.essence]:null, age=agePlantation(p);
+  /* Quand le nom de la parcelle EST le titre, le repeter en
+     sous-titre fait bavard. */
+  const nom=(String(titre).trim()===String(p.nom||'').trim())?'':(p.nom||'Parcelle');
   /* La surface annoncee est celle du TERRAIN, pas celle de la grille.
      Sur une parcelle non rectangulaire les deux different du simple au
      double, et c'est la surface qui sert a juger la densite : l'erreur
      partirait chez le pepinieriste. */
   const surf=(an&&an.surfaceRelevee)?an.surfaceRelevee:surfaceGrille(p);
   return '<h1>'+esc(titre)+'</h1>'+
-    '<div class="sst">'+esc(p.nom||'Parcelle')+
-    (sp?' · '+esc(sp.nom):'')+(p.cultivar?' · '+esc(p.cultivar):'')+
+    '<div class="sst">'+(nom?esc(nom):'')+
+    (sp?(nom?' · ':'')+esc(sp.nom):'')+(p.cultivar?' · '+esc(p.cultivar):'')+
     /* Date complete, annee comprise : ce document part chez un tiers,
        qui n'a pas le contexte pour deviner l'annee. */
     (age!=null?' · plantée '+esc(dateLongue(p.planteLe))+', '+
@@ -8664,10 +8669,46 @@ function legendeDoc(etats){
     (e.k==='?'||e.k==='a'?';border:1.5px solid '+(e.k==='a'?e.c:'#C8C4B6'):'')+
     '"></i>'+esc(e.n)+'</span>').join('')+
     (ch.indexOf('h')>-1
-      ? '<span style="color:#7A8A80">Un emplacement laissé vide est hors parcelle '+
-        '— la grille y déborde du terrain.</span>'
+      ? '<span style="color:#7A8A80">Un emplacement laissé vide n’a jamais été '+
+        'planté : bois, haie, roche ou limite du terrain.</span>'
       : '')+
     '</div>';
+}
+/* Combien de lignes, a la FIN de la grille, ne portent aucun arbre.
+   Une grille plus grande que la plantation n'est pas une erreur en
+   soi — on la decrit avant de la parcourir — mais une fois le relevé
+   fait, ces lignes ne sont plus que des rangees de ronds vides qui
+   encombrent le plan et faussent la lecture. */
+function lignesVidesFin(p,etats){
+  const L=p.nbLignes||0, R=p.nbArbres||0, ch=String(etats||'');
+  if(!L||!R)return 0;
+  let n=0;
+  for(let i=L-1;i>=0;i--){
+    let porte=false;
+    for(let j=0;j<R;j++){
+      const e=ch[i*R+j]||'?';
+      if(e!=='?'&&HORS_COMPTE.indexOf(e)===-1){porte=true;break}
+      if(e==='a'){porte=true;break}       /* un emplacement vide reste un emplacement */
+    }
+    if(porte)break;
+    n++;
+  }
+  return (n>=L)?0:n;   /* on ne vide jamais la parcelle entiere */
+}
+/* Retirer ces lignes : la grille retrecit, et TOUS les releves avec
+   elle — sinon leur chaine ne correspondrait plus a la grille et les
+   etats se decaleraient d'une ligne. */
+function rognerLignesVides(p){
+  const rel=dernierReleve(p.id); if(!rel)return 0;
+  const n=lignesVidesFin(p,rel.etats); if(!n)return 0;
+  const R=p.nbArbres||0, garde=(p.nbLignes-n)*R;
+  relevesDe(p.id).forEach(function(r){
+    r.etats=String(r.etats||'').slice(0,garde);
+    marquerRel(r);
+  });
+  p.nbLignes-=n; marquerParc(p);
+  save();
+  return n;
 }
 /* Une parcelle est situee quand on peut placer chacun de ses arbres
    sur une carte : il y faut l'origine ET l'orientation. */
@@ -8734,6 +8775,39 @@ function commentLireLePlan(p){
 }
 
 /* ---------- 1. le plan de replantation ---------- */
+/* ---------- 0. le plan nu ----------
+   Les autres documents expliquent, conseillent, citent le CNPF. Celui-
+   ci ne dit rien : le plan, les quatre chiffres, et ou se trouve la
+   parcelle. C'est ce qu'on envoie a quelqu'un qui sait deja son
+   metier et n'a pas besoin qu'on le lui raconte. */
+function docPlanSeul(p,rel,surPlace){
+  const an=analyserReleve(p,rel.etats);
+  const chif=[
+    ['Emplacements plantés', an.plantes, ''],
+    ['Vivants',              an.vivant,  'vert'],
+    ['Morts',                an.mort,    'rouge'],
+    ['À recéper',            an.recepage,'ambre']
+  ].concat(an.deperissant?[['Dépérissants',an.deperissant,'ambre']]:[]);
+  const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
+  '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'+
+  '<title>Plan — '+esc(p.nom||'Parcelle')+'</title><style>'+
+  STYLE_DOC+STYLE_PARC+
+  '.kc.vert b{color:#1F7A3D}.kc.rouge b{color:#C0392B}.kc.ambre b{color:#8A6500}'+
+  '<\/style></head><body>'+
+  enteteDoc(p,p.nom||'Parcelle',
+    'Relevé du '+fmtDate(new Date(rel.faitLe+'T12:00:00')),an)+
+  '<div class="kchiffres">'+chif.map(function(x){
+    return '<div class="kc '+x[2]+'"><b>'+x[1]+'</b><span>'+esc(x[0])+'</span></div>';
+  }).join('')+'</div>'+
+  '<div class="pgr">'+svgParcelle(p,rel.etats,
+    {largeur:760,pasMax:16,texte:'#5C6B63',fond:'#FBFAF6'})+'</div>'+
+  legendeDoc(rel.etats)+
+  ouEstLaParcelle(p)+
+  '<div class="pied">Affût · '+fmtDate(new Date())+'</div>'+
+  '</body></html>';
+  rendreDoc(doc,surPlace);
+}
+
 function docReplantation(p,rel,surPlace){
   const an=analyserReleve(p,rel.etats);
   const lignes=plagesManquants(p,rel.etats);
@@ -9183,6 +9257,7 @@ function imprimerDoc(){
       fn(p,rel,false);
     };
   };
+  const pl=$('#pa-doc-plan'); if(pl)pl.onclick=go(docPlanSeul);
   const a=$('#pa-doc-repl'); if(a)a.onclick=go(docReplantation);
   const b=$('#pa-doc-elag'); if(b)b.onclick=go(docElagage);
   const c=$('#pa-doc-etat'); if(c)c.onclick=go(docEtatParcelle);
@@ -9847,6 +9922,16 @@ function renderParcelle(){
       '<button class="mesadd" id="pa-situer" style="margin-top:9px">'+
       'Situer la parcelle</button></div>';
   }
+  /* Des lignes vides en fin de grille : des rangees de ronds qui ne
+     veulent rien dire, et qu'on peut retirer sans rien perdre. */
+  const nv=rel?lignesVidesFin(p,rel.etats):0;
+  if(nv){
+    al+='<div class="pdu">'+(nv>1?'Les '+nv+' dernières lignes ne portent':
+      'La dernière ligne ne porte')+' aucun arbre. '+
+      (nv>1?'Elles encombrent':'Elle encombre')+' le plan sans rien apprendre.'+
+      '<button class="mesadd" id="pa-rogner" style="margin-top:9px">'+
+      (nv>1?'Supprimer ces '+nv+' lignes':'Supprimer la ligne '+p.nbLignes)+'</button></div>';
+  }
   /* Ce qui est a faire a cet age. */
   const jl=jalonsDuMoment(age);
   if(jl.length){
@@ -10358,6 +10443,20 @@ brancher('#pa-carte',function(e){
    Le meme editeur que « Modifier la grille » : c'est la qu'on pose les
    reperes, inutile d'en ecrire un second. */
 brancher('#pa-alerte',function(e){
+  if(e.target.closest('#pa-rogner')){
+    const p=parcelleDe(paId); if(!p)return;
+    const n=lignesVidesFin(p,(dernierReleve(p.id)||{}).etats);
+    askConfirm(n>1?'Supprimer '+n+' lignes':'Supprimer la ligne '+p.nbLignes,
+      (n>1?'Ces '+n+' lignes ne portent':'Cette ligne ne porte')+' aucun arbre. '+
+      'La grille passera à '+(p.nbLignes-n)+' lignes, et tous les relevés '+
+      'seront raccourcis d’autant. Rien de ce qui a été relevé n’est perdu.',
+      'Supprimer',function(){
+        const f=rognerLignesVides(p);
+        paSel=null; renderParcelle(); renderAll();
+        toast(f>1?f+' lignes supprimées':'Ligne supprimée');
+      });
+    return;
+  }
   if(!e.target.closest('#pa-situer'))return;
   const p=parcelleDe(paId); if(!p)return;
   closeSheet('#sh-parc');
