@@ -303,6 +303,15 @@ body.attente{opacity:.5}
 /* Le repere et sa croix d'effacement sur la meme ligne. */
 /* Le point que l'on fait glisser pour poser un repere. Large au
    doigt, mais troue au centre : on doit voir l'arbre qu'on vise. */
+/* Les deux poignees du calque. La pleine porte toute la grille,
+   la creuse la fait pivoter : la difference se voit sans legende. */
+.poig{background:none;border:0}
+.poig i{display:block;width:40px;height:40px;border-radius:50%;
+  box-shadow:0 0 0 2px rgba(0,0,0,.5),0 3px 10px rgba(0,0,0,.55);position:relative}
+.poigA i{background:rgba(127,184,214,.92);border:3px solid #F4F7F5}
+.poigR i{background:rgba(20,30,26,.35);border:3px dashed #CFE6F3}
+.poigA i::after,.poigR i::after{content:'';position:absolute;left:50%;top:50%;
+  width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:#fff}
 /* L'etiquette du nom au centre de la parcelle, sur la carte. */
 .etiqparc{background:none;border:0;pointer-events:none}
 .etiqparc span{display:inline-block;transform:translate(-50%,-50%);
@@ -3243,6 +3252,8 @@ function stopPlace(){
   if(map)map.off('move',majCadrage);
   /* Le point a glisser part avec le reste. */
   if(PLACE&&PLACE.pin){try{PLACE.pin.remove()}catch(e){}}
+  /* Le calque et ses poignees vivent hors du calque de dessin. */
+  if(SIT)arreterCalque();
   PLACE=null;dessin().clearLayers();
   $('#reticle').classList.remove('on');$('#retinfo').classList.remove('on');
   $('#act-alt').style.display='none';$('#act-cancel').style.display='none';
@@ -3312,7 +3323,7 @@ $('#act-cancel').onclick=function(){
   if(PLACE&&PLACE.what==='terr')pendingTerr=null;
   /* Annuler abandonne la mise en place en cours. On ne peut pas le
      faire dans stopPlace, qui passe entre les deux points. */
-  if(PLACE&&PLACE.what==='parcsit'&&SIT){ SIT=null; toast('Mise en place abandonnée') }
+  if(PLACE&&PLACE.mode==='calque'){ arreterCalque(); toast('Mise en place abandonnée') }
   stopPlace();
 };
 function centreTerr(t){
@@ -4163,9 +4174,7 @@ $('#act-main').onclick=async function(){
   }
   if(PLACE.mode==='cadrage'){
     const ring=cadreCourant();map.off('move',majCadrage);stopPlace();finishTerr(ring);return}
-  if(PLACE.mode==='point'&&PLACE.what==='parcsit'){
-    if(validerSituer(c.lat,c.lng))return;
-  }
+  if(PLACE.mode==='calque'){ validerCalque(); return }
   if(PLACE.mode==='point'){
     if(PLACE.what==='deplacer'){
       const r=ST.recs.find(x=>x.id===PLACE.rec);
@@ -8811,75 +8820,130 @@ function rognerLignesVides(p){
    differents, et les confondre a coute cher : l'editeur de grille
    demande trois reperes et RECALCULE les dimensions, ce qui n'a aucun
    sens quand la grille est deja connue et le releve deja fait.
-   Ici, tout est connu sauf l'endroit. Deux points suffisent : le
-   premier et le dernier arbre de la ligne 1 donnent l'origine et le
-   cap. Rien d'autre n'est touche. */
-let SIT=null;        /* {id, etape:'A'|'B', A:[lat,lng]} */
+   Ici, tout est connu sauf l'endroit : seuls l'origine et le cap
+   manquent, et rien d'autre ne doit bouger.
+   Deux poignees suffisent : l'une porte toute la grille, l'autre la
+   fait pivoter. Et l'on dessine la grille elle-meme par-dessus la vue
+   aerienne — pas seulement deux points. C'est la difference qui
+   compte : avec deux points, une erreur d'un pixel sur le premier
+   arbre ne se voit qu'une fois enregistree, cinq cents metres plus
+   loin. Avec les lignes posees sur la photo, on voit tout de suite
+   si elles tombent sur les rangees. */
+let SIT=null;        /* {id, lat, lng, cap, hA, hR, cal} */
 function situerParcelle(id){
   const p=parcelleDe(id); if(!p)return;
-  SIT={id:id, etape:'A', A:null};
   closeAll();
-  setTimeout(function(){ etapeSituer() },220);
+  setTimeout(function(){ demarrerCalque(p) },220);
 }
-function etapeSituer(){
-  if(!SIT)return;
-  const p=parcelleDe(SIT.id); if(!p){SIT=null;return}
-  const A=SIT.etape==='A';
-  startPoint('parcsit',{orig:A?null:SIT.A});
+function demarrerCalque(p){
+  allerVue('map');
   try{
     if(aBase!=='ign_ortho'&&aBase!=='esri')
       setBase((bases.ign_ortho&&bases.ign_ortho._ko<8)?'ign_ortho':'esri',true);
-    const cible=SIT.A||(parcelleSituee(p)?[p.oriLat,p.oriLng]:null);
-    if(cible)map.setView(cible,Math.max(map.getZoom(),18));
-    else{
+  }catch(e){}
+  /* On part de la ou elle est deja, sinon du centre de l'ecran. */
+  let lat,lng,cap;
+  if(parcelleSituee(p)){ lat=p.oriLat; lng=p.oriLng; cap=p.cap;
+    try{map.setView([lat,lng],Math.max(map.getZoom(),18))}catch(e){} }
+  else{
+    try{
       const t=ST.terr.find(y=>y.id===ST.aT)||ST.terr[0];
       if(t&&t.ring&&t.ring.length>2)map.fitBounds(L.latLngBounds(t.ring).pad(0.1));
       else if(map.getZoom()<16)map.setZoom(17);
-    }
-  }catch(e){}
-  showHint(A?'1 sur 2 — le premier arbre':'2 sur 2 — le dernier arbre de la même ligne',
-    A ? 'Faites glisser le point bleu sur le PREMIER arbre de la ligne 1, '+
-        'puis validez. La carte ne bouge pas.'
-      : 'Maintenant le DERNIER arbre de cette même ligne 1, à l’autre bout. '+
-        'Ces deux points donnent l’orientation de toute la parcelle.');
+    }catch(e){}
+    const c=map.getCenter();
+    /* Pose au centre, la grille centree sur l'ecran plutot que son
+       coin : on la voit entiere des le premier instant. */
+    const L0=Math.max(1,(p.nbLignes||1)-1), R0=Math.max(1,(p.nbArbres||1)-1);
+    const d=decaler(c.lat,c.lng,L0*Math.abs(p.ecartLigne||0)/2,
+                                -R0*Math.abs(p.ecartArbre||0)/2);
+    lat=d[0]; lng=d[1]; cap=90;
+  }
+  SIT={id:p.id, lat:lat, lng:lng, cap:cap, cal:null, hA:null, hR:null};
+  PLACE={mode:'calque',what:'parcsit'};
+  $('#reticle').classList.remove('on');
+  $('#retinfo').classList.add('on');
+  $('#act-main-t').textContent='Valider la position';
+  $('#act-main svg').style.display='none';$('#act-main').className='big primary';
+  $('#act-alt').style.display='none';$('#act-cancel').style.display='flex';
+  $('#act-map').style.display='none';$('#typebar').classList.remove('on');
+  dessinerCalque(true);
+  showHint('Posez la grille sur vos arbres',
+    'Faites glisser le disque plein pour déplacer toute la parcelle, et le '+
+    'disque creux au bout de la première ligne pour la faire pivoter. '+
+    'Les lignes doivent tomber sur vos rangées.');
 }
-/* Enregistre le point valide pendant une mise en place. */
-function validerSituer(lat,lng){
-  if(!SIT)return false;
-  const p=parcelleDe(SIT.id); if(!p){SIT=null;return true}
-  if(SIT.etape==='A'){
-    SIT.A=[lat,lng]; SIT.etape='B';
-    stopPlace();
-    setTimeout(function(){ etapeSituer() },260);
-    return true;
+/* Un objet parcelle de travail, pour calculer les positions sans
+   toucher a la vraie parcelle tant que rien n'est valide. */
+function parcelleEnCours(){
+  const p=parcelleDe(SIT.id);
+  return {oriLat:SIT.lat, oriLng:SIT.lng, cap:SIT.cap,
+          ecartArbre:p.ecartArbre, ecartLigne:p.ecartLigne,
+          nbLignes:p.nbLignes, nbArbres:p.nbArbres};
+}
+function dessinerCalque(refaireLesPoignees){
+  if(!SIT)return;
+  const p=parcelleDe(SIT.id); if(!p)return;
+  const q=parcelleEnCours();
+  const L1=Math.max(1,q.nbLignes||1), R1=Math.max(1,q.nbArbres||1);
+  if(SIT.cal){try{map.removeLayer(SIT.cal)}catch(e){}}
+  SIT.cal=L.layerGroup().addTo(map);
+  const A=posArbre(q,0,0), B=posArbre(q,0,R1-1),
+        C=posArbre(q,L1-1,0), D=posArbre(q,L1-1,R1-1);
+  L.polygon([A,B,D,C],{color:'#7FB8D6',weight:2,fillColor:'#7FB8D6',fillOpacity:.10,
+    interactive:false}).addTo(SIT.cal);
+  /* Une ligne par rangee : c'est en les voyant courir le long des
+     rangees d'arbres qu'on sait si l'orientation est juste. Des
+     points, a cette echelle, ne se distinguent pas. */
+  for(let i=0;i<L1;i++){
+    L.polyline([posArbre(q,i,0),posArbre(q,i,R1-1)],
+      {color:'#CFE6F3',weight:1.2,opacity:.85,interactive:false}).addTo(SIT.cal);
   }
-  const d=distanceLocale(SIT.A[0],SIT.A[1],lat,lng);
-  const attendu=Math.abs(p.ecartArbre||0)*Math.max(1,(p.nbArbres||1)-1);
-  stopPlace();
-  const poser=function(){
-    p.oriLat=SIT.A[0]; p.oriLng=SIT.A[1];
-    p.cap=capEntre(SIT.A[0],SIT.A[1],lat,lng);
-    marquerParc(p); save(); SIT=null;
-    renderAll(); montrerParcelleSurCarte(p);
-    setTimeout(function(){ouvrirParcelle(p.id)},300);
-    toast('Parcelle située');
-  };
-  /* Un ecart franc entre la distance mesuree et celle qu'implique la
-     grille veut dire qu'un des deux points est sur le mauvais arbre.
-     Le dire AVANT d'enregistrer, plutot que de laisser une parcelle
-     de travers qu'il faudra defaire. */
-  if(attendu>0&&Math.abs(d-attendu)/attendu>0.12){
-    askConfirm('Les deux points ne collent pas à la grille',
-      'Vos deux repères sont distants de <b>'+Math.round(d)+' m</b>. Pour '+
-      p.nbArbres+' arbres espacés de '+vir(Math.abs(p.ecartArbre),1)+' m, '+
-      'la ligne devrait mesurer <b>'+Math.round(attendu)+' m</b>.<br><br>'+
-      'L’un des deux points est probablement sur le mauvais arbre. Vous pouvez '+
-      'quand même enregistrer : la parcelle sera placée, mais de travers.',
-      'Enregistrer quand même',poser);
-    return true;
+  const d=distanceLocale(A[0],A[1],B[0],B[1]);
+  $('#retinfo').innerHTML=L1+' lignes × '+R1+' arbres · ligne de '+Math.round(d)+' m'+
+    '<br>cap '+Math.round(SIT.cap)+'° · '+dms(SIT.lat,'N','S')+' '+dms(SIT.lng,'E','O');
+  if(refaireLesPoignees){
+    if(SIT.hA){try{SIT.hA.remove()}catch(e){}}
+    if(SIT.hR){try{SIT.hR.remove()}catch(e){}}
+    SIT.hA=L.marker(A,{draggable:true,autoPan:true,zIndexOffset:1000,
+      icon:L.divIcon({className:'poig poigA',iconSize:[40,40],iconAnchor:[20,20],
+        html:'<i></i>'})}).addTo(map);
+    SIT.hR=L.marker(B,{draggable:true,autoPan:true,zIndexOffset:1000,
+      icon:L.divIcon({className:'poig poigR',iconSize:[40,40],iconAnchor:[20,20],
+        html:'<i></i>'})}).addTo(map);
+    const bougerA=function(){ const c=SIT.hA.getLatLng();
+      SIT.lat=c.lat; SIT.lng=c.lng; dessinerCalque(false);
+      try{SIT.hR.setLatLng(posArbre(parcelleEnCours(),0,
+        Math.max(1,(parcelleDe(SIT.id).nbArbres||1)-1)))}catch(e){} };
+    /* La poignee de rotation ne donne QUE le cap : la longueur de la
+       ligne est fixee par l'ecartement et le nombre d'arbres. On la
+       ramene donc sur la position calculee. */
+    const bougerR=function(){ const c=SIT.hR.getLatLng();
+      SIT.cap=capEntre(SIT.lat,SIT.lng,c.lat,c.lng); dessinerCalque(false); };
+    const caler=function(){ try{
+      const qq=parcelleEnCours();
+      SIT.hR.setLatLng(posArbre(qq,0,Math.max(1,(qq.nbArbres||1)-1)));
+    }catch(e){} };
+    SIT.hA.on('drag',bougerA); SIT.hA.on('dragend',bougerA);
+    SIT.hR.on('drag',bougerR); SIT.hR.on('dragend',function(){bougerR();caler()});
   }
-  poser();
-  return true;
+}
+function arreterCalque(){
+  if(!SIT)return;
+  [SIT.hA,SIT.hR].forEach(function(h){ if(h){try{h.remove()}catch(e){}} });
+  if(SIT.cal){try{map.removeLayer(SIT.cal)}catch(e){}}
+  SIT=null;
+}
+function validerCalque(){
+  if(!SIT)return;
+  const p=parcelleDe(SIT.id);
+  if(!p){arreterCalque();stopPlace();return}
+  p.oriLat=SIT.lat; p.oriLng=SIT.lng; p.cap=SIT.cap;
+  marquerParc(p); save();
+  arreterCalque(); stopPlace();
+  renderAll(); montrerParcelleSurCarte(p);
+  setTimeout(function(){ouvrirParcelle(p.id)},320);
+  toast('Parcelle située');
 }
 /* Montrer la parcelle sur la carte : c'est la reponse a « ou est-elle ». */
 let layParc=null;
