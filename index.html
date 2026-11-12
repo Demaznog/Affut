@@ -300,6 +300,12 @@ body.attente{opacity:.5}
 .chip.danger{border-color:rgba(193,83,70,.4);color:#E8A79C}
 
 /* Les trois reperes de la grille. */
+/* Le repere et sa croix d'effacement sur la meme ligne. */
+.pnptl{display:flex;align-items:stretch;gap:7px;margin-bottom:8px}
+.pnptl .pnpt{flex:1;margin-bottom:0}
+.pnptx{width:46px;flex:none;border-radius:14px;background:var(--anthracite-2);
+  border:1px solid var(--trait);color:var(--brume-2);font-size:15px}
+.pnptx:active{transform:scale(.96)}
 .pnpt{display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:14px;
   background:var(--anthracite-2);border:1px solid var(--trait);margin-bottom:8px;width:100%;
   text-align:left}
@@ -9500,11 +9506,19 @@ function renderParcelleNouvelle(){
 
   $('#pn-points').innerHTML=PN_POINTS.map(function(x){
     const v=d[x.k], pose=!!v;
-    return '<button class="pnpt'+(pose?' pose':'')+'" data-pnpt="'+x.k+'">'+
+    /* Un repere mal place doit pouvoir s'effacer : sans cela, une
+       erreur de visee oblige a tout recommencer, et la grille reste
+       fausse en attendant. */
+    return '<div class="pnptl"><button class="pnpt'+(pose?' pose':'')+
+      '" data-pnpt="'+x.k+'">'+
       '<span class="n">'+x.k+'</span>'+
       '<span class="tt"><b>'+esc(x.t)+'</b><span>'+
-        (pose?('posé · '+v[0].toFixed(5)+', '+v[1].toFixed(5)):esc(x.d))+
-      '</span></span></button>';
+        (pose?('posé · '+v[0].toFixed(5)+', '+v[1].toFixed(5)+' — toucher pour corriger')
+             :esc(x.d))+
+      '</span></span></button>'+
+      (pose?'<button class="pnptx" data-pnptdel="'+x.k+'" '+
+        'aria-label="Effacer le repère '+x.k+'">&#10005;</button>':'')+
+      '</div>';
   }).join('');
 
   /* Deux facons de definir la grille : par l'ecartement annonce, ou
@@ -9600,9 +9614,32 @@ function poserRepereParcelle(k){
   const x=PN_POINTS.find(y=>y.k===k);
   setTimeout(function(){
     startPoint('parcpt',{orig:pnDraft&&pnDraft[k]?pnDraft[k]:null});
+    /* On ne reconnait pas un peuplier sur un fond de plan : la vue
+       aerienne est la seule ou l'on distingue les arbres un par un.
+       On y bascule donc, au lieu de le demander dans un texte. */
+    try{ if(aBase!=='ign_ortho'&&aBase!=='esri')
+      setBase((bases.ign_ortho&&bases.ign_ortho._ko<8)?'ign_ortho':'esri',true) }catch(e){}
+    /* Et l'on va QUELQUE PART : rester au hasard sur la carte du
+       moment, c'est demander de retrouver deux arbres sur la France
+       entiere. On vise, dans l'ordre : le repere deja pose, un autre
+       repere du meme brouillon, la parcelle si elle est situee, puis
+       le territoire actif. */
+    let cible=(pnDraft&&pnDraft[k])||null;
+    if(!cible&&pnDraft)cible=pnDraft.A||pnDraft.B||pnDraft.C||null;
+    if(!cible&&pnDraft&&pnDraft.oriLat!=null)cible=[pnDraft.oriLat,pnDraft.oriLng];
+    try{
+      if(cible)map.setView(cible,Math.max(map.getZoom(),18));
+      else{
+        const t=ST.terr.find(y=>y.id===ST.aT)||ST.terr[0];
+        if(t&&t.ring&&t.ring.length>2)map.fitBounds(L.latLngBounds(t.ring).pad(0.1));
+        else if(map.getZoom()<16)map.setZoom(17);
+      }
+    }catch(e){}
     showHint('Repère '+k+' — '+x.t,
-      'Zoomez sur la vue aérienne jusqu’à distinguer les arbres, '+
-      'puis amenez le réticule sur celui-là et validez.');
+      (cible
+        ? 'Amenez le réticule sur cet arbre précis, puis validez.'
+        : 'Si vous ne voyez pas votre parcelle, cherchez le lieu avec la loupe, '+
+          'puis zoomez jusqu’à distinguer les arbres un par un.'));
   },200);
 }
 
@@ -9947,6 +9984,15 @@ function renderParcelle(){
       'ses coordonnées.'+
       '<button class="mesadd" id="pa-situer" style="margin-top:9px">'+
       'Situer la parcelle</button></div>';
+  }else{
+    /* Situee : on montre OU, pour qu'une erreur de visee se voie, et
+       on offre de defaire. Sans cela, un repere mal place laisse la
+       grille de travers sans aucun moyen d'y revenir. */
+    al+='<div class="pdu">Située : origine '+vir(p.oriLat,5)+', '+vir(p.oriLng,5)+
+      ' · lignes au cap '+Math.round(p.cap)+'°. '+
+      'Si la grille tombe à côté sur la carte, un repère a été mal visé.'+
+      '<button class="mesadd" id="pa-desituer" style="margin-top:9px">'+
+      'Retirer les repères</button></div>';
   }
   /* Des lignes vides en fin de grille : des rangees de ronds qui ne
      veulent rien dire, et qu'on peut retirer sans rien perdre. */
@@ -10342,7 +10388,11 @@ brancher('#pn-cultivars',function(e){
   z.addEventListener('change',function(){ if(pnDraft)renderParcelleNouvelle() });
 })();
 brancher('#pn-points',function(e){
-  const b=e.target.closest('[data-pnpt]'); if(!b||!pnDraft)return;
+  if(!pnDraft)return;
+  const x=e.target.closest('[data-pnptdel]');
+  if(x){ pnDraft[x.dataset.pnptdel]=null; renderParcelleNouvelle();
+         toast('Repère '+x.dataset.pnptdel+' effacé'); return }
+  const b=e.target.closest('[data-pnpt]'); if(!b)return;
   poserRepereParcelle(b.dataset.pnpt);
 });
 (function(){
@@ -10480,6 +10530,19 @@ brancher('#pa-alerte',function(e){
         const f=rognerLignesVides(p);
         paSel=null; renderParcelle(); renderAll();
         toast(f>1?f+' lignes supprimées':'Ligne supprimée');
+      });
+    return;
+  }
+  if(e.target.closest('#pa-desituer')){
+    const p=parcelleDe(paId); if(!p)return;
+    askConfirm('Retirer les repères',
+      'La parcelle redeviendra « non située » : ses plans repartiront en '+
+      'schématique, sans coordonnées. Le relevé, lui, n’est pas touché — '+
+      'aucun arbre n’est perdu.',
+      'Retirer',function(){
+        p.oriLat=null; p.oriLng=null; p.cap=null;
+        marquerParc(p); save(); renderParcelle(); renderAll();
+        toast('Repères retirés');
       });
     return;
   }
