@@ -4245,6 +4245,16 @@ function fitRecs(list){
   if(!list.length)return;
   map.fitBounds(L.latLngBounds(list.map(r=>[r.lat,r.lng])),{padding:[50,50],maxZoom:15});
 }
+/* Le cadrage d'ouverture : ce que l'on voit en lancant l'application.
+   Poser un repere emmene la carte sur la parcelle ; retirer ces
+   reperes doit ramener la vue, sinon on reste perdu au-dessus d'un
+   point qui n'existe plus. */
+function recadrerCarte(){
+  try{
+    if(!(ST.recs.length||ST.terr.length)){ map.setView([46.6,2.4],6); return }
+    if(ST.aT==='ALL')fitTout(); else fitTerr();
+  }catch(e){}
+}
 function fitTout(){
   const b=[];
   ST.terr.forEach(t=>{if(t.ring&&t.ring.length>2)t.ring.forEach(p=>b.push(p))});
@@ -10585,7 +10595,11 @@ brancher('#pa-alerte',function(e){
       'Retirer',function(){
         p.oriLat=null; p.oriLng=null; p.cap=null;
         marquerParc(p); save(); renderParcelle(); renderAll();
-        toast('Repères retirés');
+        /* La carte etait restee sur la parcelle mal visee : on la
+           ramene a la vue d'ouverture, sinon on contemple un point
+           qui n'existe plus. */
+        recadrerCarte();
+        toast('Repères retirés · carte recadrée');
       });
     return;
   }
@@ -10854,8 +10868,7 @@ function ouvrirDocumentPlan(plan,surPlace){
   if(ST.aT!=='ALL'&&ST.aT!=='HORS'&&!ST.terr.some(t=>t.id===ST.aT))ST.aT='ALL';
   syncFilter();syncLayer();syncTopbar();syncActionBar();syncGpsPill();
   stockageOk=await save();majRattachement();renderAll();
-  if(ST.recs.length||ST.terr.length){if(ST.aT==='ALL')fitTout();else fitTerr()}
-  else map.setView([46.6,2.4],6);
+  recadrerCarte();
   suivre();
   setTimeout(rattraperMeteo,2500);
   syncEtat(); syncBoutons();
