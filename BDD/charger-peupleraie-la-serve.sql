@@ -4,8 +4,14 @@
 --  A coller dans l'editeur SQL de Supabase, APRES migration-parcelles.
 --  Le script ne cree rien en double : relance-le sans crainte.
 --
+--  VERSION DU 12 NOVEMBRE AU SOIR — remplace la precedente.
+--  Le plan initial decalait les colonnes a partir de la 30e. Ce releve
+--  vient du plan corrige : 72 colonnes et non 73, et la ligne 10, qui
+--  ne porte aucun arbre, a disparu. Les totaux n'ont pas bouge.
+--  Relancer ce script ECRASE le releve precedent au lieu de s'y ajouter.
+--
 --  Ce qu'il charge :
---    la grille      10 lignes x 73 emplacements, 7 m x 7 m,
+--    la grille      9 lignes x 72 emplacements, 7 m x 7 m,
 --                   plantee le 12 mars 2026 (Koster et AF 8)
 --    le releve      419 emplacements notes a la main sur le terrain :
 --                   242 vivants, 170 morts, 7 a receper.
@@ -13,12 +19,15 @@
 --  Deux partis pris, a corriger ensuite dans l'application en touchant
 --  le plan :
 --
---  1. Les 311 emplacements sans plant sont notes « hors parcelle » et
---     NON « non plantable ». La parcelle n'est pas rectangulaire : la
---     seule ligne 1 compte 62 places vides entre son troisieme et son
---     soixante-sixieme plant. Ce sont les contours du terrain, pas de
---     la roche. Marquer de la roche ou l'on n'en a pas constate serait
---     inventer une cause de mortalite.
+--  1. Les 229 emplacements sans plant sont notes « non plante » : un
+--     bois, une haie, la roche affleurante, la limite du terrain. Ce
+--     qui les reunit est de n'avoir jamais porte d'arbre. Ils sortent
+--     des pourcentages ET de la surface : 419 x 49 m2 = 2,05 ha, et
+--     non les 3,18 ha de la grille entiere.
+--     Ils ne sont PAS notes « non plantable », qui designe de la roche
+--     CONSTATEE a l'interieur de la parcelle. La distinction compte :
+--     l'analyse cherche si l'on meurt davantage au contact de la
+--     roche, et en inventer fausserait sa reponse.
 --
 --  2. Les cultivars ne sont PAS repartis par ligne. La facture porte
 --     150 Koster et 274 AF 8, et le releve compte 133 plants sur les
@@ -28,8 +37,7 @@
 --     cette repartition ferait dire a l'application une chose qu'elle
 --     ne sait pas.
 --
---  La ligne 10 n'a pas ete relevee : elle reste en « non relevé » et
---  sort de tous les pourcentages.
+--  La ligne 10 a ete supprimee : elle ne portait aucun arbre.
 -- =====================================================================
 
 do $$
@@ -52,7 +60,7 @@ declare
   liste text;
   pid  uuid := '9c1e7a40-5d2b-4f18-93a7-6e0b1f2c8d44';  -- fixe : pas de doublon
   rid  uuid := '3f8b2c61-07de-4a95-b1c3-5a9e4d7f0b26';
-  etats constant text := 'vvvhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhvvmmmmmmmvvcvvvhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhmmmvvmmmmmmmvmmmmmmmmvmmmvcvmmvvvmhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhvvmmmmmmvmvcmmvmmmmvvvvvvvvmmmvmmvhhhhhhhhhhhmcvvhvvvvvvvmmmmmmmmvmmmmmmvmmmvmmmvvvcmvvvvmmmmmvvvvvvvvvvvvvvvmvvvhhhhvvmmmhvmmvmmmmmmmmmmmvvvvvvvvvmmvvvvvvvvvvvvvvvmvvvvvmvvvvvmmmvvvmvmvmvmmmmmmmhmmmvmmmmvvmmmvvvvvvvvmvmvvvvmmmmvvvmmvmvvvmhhhhvmvvmmmmmvvvmmmmvvmmmvmvvhvvvvvvvvvvvvvvvvvvvvmvvvmvvvvvvvvmvvvvvvmvvhhhhhhhhhvvcmvvvvvvvvvvmmvvvmmmvmvvvhhhhhhhhvvvvvvvvvvvvvmvvvvvmvmmcmvmvhhhhhhhhhhhhhmmmvmvvvvvmvmmvmmhhhhhhhhhhhhhhhhhhhhhhhhhhhhhvvvvvvhhhhhhhhh?????????????????????????????????????????????????????????????????????????';
+  etats constant text := 'vvvhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhvvmmmmmmmvvcvvvhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhmmmvvmmmmmmmvmmmmmmmmvmmmvcvmmvvvmhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhvvmmmmmmvmvcmmvmmmmvvvvvvvvmmmvmmvhhhhhhhhhhhmcvvvvvvvvvmmmmmmmmvmmmmmmvmmmvmmmvvvcmvvvvmmmmmvvvvvvvvvvvvvvvmvvvhhhhvvmmmvmmvmmmmmmmmmmmvvvvvvvvvmmvvvvvvvvvvvvvvvmvvvvvmvvvvvmmmvvvmvmvmvmmmmmmmmmmvmmmmvvmmmvvvvvvvvmvmvvvvmmmmvvvmmvmvvvmhhhhvmvvmmmmmvvvmmmmvvmmmvmvvvvvvvvvvvvvvvvvvvvvvmvvvmvvvvvvvvmvvvvvvmvvhhhhhhhhvvcmvvvvvvvvvvmmvvvmmmvmvvvhhhhhhhhvvvvvvvvvvvvvmvvvvvmvmmcmvmvhhhhhhhhhhhhhmmmvmvvvvvmvmmvmmhhhhhhhhhhhhhhhhhhhhhhhhhhhhvvvvvvhhhhhhhhh';
 begin
   -- L'equipe : celle de l'utilisateur courant quand on le connait.
   -- Dans l'editeur SQL de Supabase on ne le connait PAS : la requete
@@ -127,8 +135,8 @@ begin
   select m.nom into nom_auteur
     from membre m where m.equipe_id = eq and m.user_id = moi;
 
-  if length(etats) <> 730 then
-    raise exception 'Le releve devrait compter 730 caracteres, il en a %', length(etats);
+  if length(etats) <> 648 then
+    raise exception 'Le releve devrait compter 648 caracteres, il en a %', length(etats);
   end if;
 
   insert into parcelle
@@ -138,12 +146,12 @@ begin
   values
     (pid, eq, array[eq], 'La peupleraie de La Serve', 'APEU',
      'Koster · AF 8', null,
-     date '2026-03-12', 2.05, 7, 7, 10, 73,
+     date '2026-03-12', 2.05, 7, 7, 9, 72,
      '[]'::jsonb,
      'Plantee le 12 mars 2026, plants conserves au froid pour retarder la montee de seve. '
      'Facture : 150 Koster et 274 AF 8 — repartition par ligne inconnue, a demander a l''entreprise. '
      'Les reperes de la grille (origine, cap) restent a poser sur place. '
-     'Ligne 10 non relevee.',
+     'Plan corrige le 12 novembre : 72 colonnes, ligne 10 supprimee.',
      moi, nom_auteur)
   on conflict (id) do update
      set nom = excluded.nom, essence = excluded.essence,
@@ -158,8 +166,8 @@ begin
      auteur, auteur_nom)
   values
     (rid, pid, eq, array[eq], date '2026-11-12', etats,
-     'Releve a la main sur le terrain, reporte depuis le plan papier. '
-     '242 vivants, 170 morts, 7 a receper sur 419 emplacements plantes.',
+     'Releve a la main sur le terrain, reporte depuis le plan corrige du '
+     '12 novembre. 242 vivants, 170 morts, 7 a receper sur 419 plantes.',
      moi, nom_auteur)
   on conflict (id) do update
      set etats = excluded.etats, fait_le = excluded.fait_le,
@@ -169,7 +177,7 @@ end $$;
 notify pgrst, 'reload schema';
 
 -- --------------------------------------------------------------------
---  Verification : les chiffres doivent etre 242 / 170 / 7 / 73.
+--  Verification : 648 / 242 / 170 / 7 / 229 / 0.
 -- --------------------------------------------------------------------
 select
   (select nom from parcelle where id = '9c1e7a40-5d2b-4f18-93a7-6e0b1f2c8d44') as parcelle,
@@ -177,7 +185,7 @@ select
   length(r.etats) - length(replace(r.etats,'v',''))    as vivants,
   length(r.etats) - length(replace(r.etats,'m',''))    as morts,
   length(r.etats) - length(replace(r.etats,'c',''))    as a_receper,
-  length(r.etats) - length(replace(r.etats,'h',''))    as hors_parcelle,
+  length(r.etats) - length(replace(r.etats,'h',''))    as non_plantes,
   length(r.etats) - length(replace(r.etats,'?',''))    as non_releves
 from releve r
 where r.id = '3f8b2c61-07de-4a95-b1c3-5a9e4d7f0b26';

@@ -322,9 +322,22 @@ body.attente{opacity:.5}
 .pnres b{font-family:var(--mono);font-size:14px}
 
 /* La carte de la parcelle : une pastille par emplacement. */
+/* 72 colonnes dans la largeur d'un telephone donnent des pastilles de
+   quatre pixels : on ne distingue rien, et sept recepages parmi
+   quatre cent dix-neuf arbres sont tout simplement invisibles. Le plan
+   defile donc horizontalement des qu'on l'agrandit, au lieu d'etre
+   ecrase dans la largeur disponible. */
 .pgrille{width:100%;background:var(--anthracite-2);border:1px solid var(--trait);
-  border-radius:16px;padding:12px;overflow:hidden}
+  border-radius:16px;padding:12px;overflow:auto;-webkit-overflow-scrolling:touch}
 .pgrille svg{display:block;width:100%;height:auto}
+.pgrille.zoom svg{width:var(--pw);max-width:none}
+.pzoom{display:flex;align-items:center;gap:7px;margin-top:8px}
+.pzoom button{height:34px;min-width:42px;padding:0 11px;border-radius:11px;
+  background:var(--anthracite-2);border:1px solid var(--trait);color:var(--brume);
+  font-size:13px;font-weight:600}
+.pzoom button.on{border-color:var(--foret-clair);color:var(--foret-clair)}
+.pzoom button:active{transform:scale(.96)}
+.pzoom .pznote{font-size:11px;color:var(--brume-2);margin-left:auto;text-align:right}
 .plegende{display:flex;flex-wrap:wrap;gap:12px;margin-top:9px;padding:0 2px}
 .plegende span{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--brume-2)}
 .plegende i{width:10px;height:10px;border-radius:50%;flex:none}
@@ -1521,6 +1534,7 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
 
     <div class="lab">Où en est la mortalité</div>
     <div id="pa-carte"></div>
+    <div id="pa-zoom" class="pzoom"></div>
     <div id="pa-legende"></div>
     <!-- Corriger un arbre sans refaire tout le releve : le panneau
          s'ouvre sous le plan, pour garder les voisins sous les yeux. -->
@@ -1572,7 +1586,7 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <!-- Aucun arbre ici : pourquoi ? -->
     <div class="rvtrois rvbas">
       <button class="rvpetit rva" data-e="a"><b>Absent</b><span>à replanter</span></button>
-      <button class="rvpetit rvh" data-e="h"><b>Hors parcelle</b><span>la grille déborde</span></button>
+      <button class="rvpetit rvh" data-e="h"><b>Non planté</b><span>bois, haie, limite</span></button>
       <button class="rvpetit rvr" data-e="r"><b>Non plantable</b><span>roche, souche</span></button>
     </div>
     <button class="rvsuite" id="rv-suite">Appliquer au reste de la ligne</button>
@@ -3256,7 +3270,12 @@ const ETATS_PLACE=[
      debordent sur la haie, le chemin ou le voisin. Ces emplacements-la
      n'ont jamais ete plantes et ne le seront jamais — les compter
      comme « a replanter » gonflerait la commande du pepinieriste. */
-  {k:'h',n:'Hors parcelle',c:'#1F2A26', d:'la grille déborde ici — jamais planté'},
+  /* « Hors parcelle » decrivait mal le terrain. Ces emplacements sont
+     ceux qu'on n'a pas plantes, et les raisons sont multiples : un
+     bois, une haie, la roche affleurante, la limite du terrain. Ce qui
+     les reunit n'est pas d'etre dehors, c'est de n'avoir jamais porte
+     d'arbre et de ne jamais en porter. */
+  {k:'h',n:'Non planté',c:'#44524B', d:'bois, haie, limite — aucun arbre n’y a été mis'},
   /* Distinct du precedent, et pour une raison qui compte : un
      emplacement non plantable est DANS la parcelle. Il ne se replante
      pas davantage, mais il dit quelque chose du terrain — un sol
@@ -9529,6 +9548,29 @@ function ouvrirParcelle(id){
    corriger un seul serait absurde, et personne ne le ferait — donc la
    carte finirait par mentir. */
 let paSel=null;        /* {i,j} de l'emplacement choisi, ou null */
+/* Largeur du plan, en multiples de la largeur disponible. A 1 il tient
+   dans l'ecran — et sur un telephone c'est illisible des que la
+   parcelle depasse une vingtaine de colonnes. */
+let paZoom=1;
+const ZOOMS=[['Ajusté',1],['×2',2],['×4',4],['×8',8]];
+/* Combien de pixels par emplacement a ce niveau : c'est ce chiffre,
+   et non le facteur, qui dit si l'on y voit quelque chose. */
+function pasPlan(p,z){
+  const l=$('#pa-carte');
+  const dispo=(l&&l.clientWidth?l.clientWidth:360)-24;
+  return Math.max(1,(dispo*z-44)/Math.max(1,(p.nbArbres||1)-1));
+}
+function renderZoom(){
+  const z=$('#pa-zoom'); if(!z)return;
+  const p=parcelleDe(paId), rel=p?dernierReleve(p.id):null;
+  if(!p||!rel){ z.innerHTML=''; return }
+  const px=pasPlan(p,paZoom);
+  z.innerHTML=ZOOMS.map(function(x){
+      return '<button data-pz="'+x[1]+'"'+(x[1]===paZoom?' class="on"':'')+'>'+x[0]+'</button>';
+    }).join('')+
+    '<span class="pznote">'+Math.round(px)+' px par arbre'+
+    (px<9?'<br>trop petit pour viser juste':'')+'</span>';
+}
 
 /* Du point touche a l'emplacement le plus proche. Sur 73 colonnes une
    pastille fait quatre pixels : viser juste est impossible au doigt. On
@@ -9580,6 +9622,21 @@ function bougerPlace(pas){
   renderParcelle();
 }
 
+/* Agrandir ne sert a rien si l'emplacement choisi sort de l'ecran :
+   on le ramene dans la vue, centre, apres chaque rendu. */
+function amenerDansLaVue(){
+  const g=$('#pa-grille'); if(!g||!paSel)return;
+  const svg=g.querySelector('svg'); if(!svg)return;
+  const l=svg.clientWidth||svg.getBoundingClientRect().width;
+  if(!l||l<=g.clientWidth)return;          /* tout tient : rien a faire */
+  /* Le plan porte sa geometrie : inutile de la recalculer, et surtout
+     de la recalculer autrement que le dessin. */
+  const m=+svg.dataset.marge, pas=+svg.dataset.pas;
+  const vb=svg.viewBox&&svg.viewBox.baseVal;
+  if(!(pas>0)||!vb||!vb.width)return;
+  const x=(m+paSel.j*pas)*(l/vb.width);
+  g.scrollLeft=Math.max(0,Math.min(l-g.clientWidth,x-g.clientWidth/2));
+}
 function renderPlace(){
   const z=$('#pa-place'); if(!z)return;
   const p=parcelleDe(paId), rel=p?dernierReleve(p.id):null;
@@ -9613,12 +9670,17 @@ function renderParcelle(){
   const sp=p.essence?SP[p.essence]:null;
 
   $('#pa-titre').textContent=p.nom||'Parcelle';
+  /* La surface du terrain, pas celle de la grille : sur une parcelle
+     non rectangulaire les deux different du simple au double, et c'est
+     la surface qui sert a juger la densite. De meme, annoncer 648
+     emplacements quand 419 sont plantes laisse croire a 229 manquants
+     qui n'ont jamais existe. */
   $('#pa-sub').textContent=[
     sp?sp.nom:'',
     p.cultivar||'',
     age!=null?age+' saison'+(age>1?'s':''):'',
-    vir(surfaceGrille(p),2)+' ha',
-    nbArbresDe(p)+' emplacements'
+    vir(an?an.surfaceRelevee:surfaceGrille(p),2)+' ha',
+    an?(an.plantes+' plantés'):(nbArbresDe(p)+' emplacements')
   ].filter(Boolean).join(' · ');
 
   /* --- chiffres --- */
@@ -9671,18 +9733,28 @@ function renderParcelle(){
 
   /* --- la carte de la parcelle --- */
   $('#pa-carte').innerHTML=rel
-    ? '<div class="pgrille">'+svgParcelle(p,rel.etats,{largeur:640,choisi:paSel})+'</div>'
+    ? '<div class="pgrille'+(paZoom>1?' zoom':'')+'" id="pa-grille"'+
+      (paZoom>1?' style="--pw:'+(paZoom*100)+'%"':'')+'>'+
+      svgParcelle(p,rel.etats,{largeur:640,choisi:paSel})+'</div>'
     : '<div class="empty">Aucun relevé. Parcourez les lignes une première fois '+
       'pour voir l’état de la parcelle.</div>';
+  renderZoom();
   $('#pa-legende').innerHTML=rel
-    ? '<div class="plegende">'+ETATS_PLACE.filter(e=>e.k!=='?').map(e=>
+    /* Seuls les etats presents : annoncer « Dépérissant » et « Non
+       plantable » quand il n'y en a aucun fait chercher sur le plan
+       des symboles qui n'y sont pas. */
+    ? '<div class="plegende">'+ETATS_PLACE.filter(e=>
+        e.k!=='?'&&String(rel.etats).indexOf(e.k)>-1).map(e=>
         '<span><i class="'+(e.k==='c'?'carre':'')+'" style="background:'+e.c+'"></i>'+
         esc(e.n)+'</span>').join('')+
-      '<span><i style="background:'+ETAT_PLACE['?'].c+';border:1px solid var(--trait2)"></i>'+
-      'Non relevé</span></div>'+
+      (String(rel.etats).indexOf('?')>-1
+        ? '<span><i style="background:'+ETAT_PLACE['?'].c+
+          ';border:1px solid var(--trait2)"></i>Non relevé</span>'
+        : '')+'</div>'+
       (paSel?'':'<div class="ppnote">Touchez le plan pour corriger un arbre.</div>')
     : '';
   renderPlace();
+  amenerDansLaVue();
 
   /* --- le verdict et les pistes --- */
   $('#pa-diag').innerHTML=an?blocVerdict(p,an):'';
@@ -10154,6 +10226,11 @@ brancher('#pa-carte',function(e){
   /* Retoucher le meme emplacement referme le panneau : sans cela, on
      ne saurait plus comment s'en debarrasser. */
   paSel=(paSel&&paSel.i===q.i&&paSel.j===q.j)?null:q;
+  renderParcelle();
+});
+brancher('#pa-zoom',function(e){
+  const b=e.target.closest('[data-pz]'); if(!b)return;
+  paZoom=+b.dataset.pz||1;
   renderParcelle();
 });
 brancher('#pa-place',function(e){
