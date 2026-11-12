@@ -2341,6 +2341,13 @@ let FIX=null;                 /* derniere position connue du telephone */
 let suiviId=null, recentre=false;
 let heatOn=false, SILHOUETTES=true;
 let map,layTerr,layRec,layBat,layDraw,layMe,layMembres,heatLayer;
+/* Le calque de dessin naît avec la carte. Si Leaflet n'a pas pu se
+   charger — reseau coupe au demarrage, CDN injoignable — il reste
+   absent, et toute pose sur la carte plantait sur clearLayers.
+   Un calque muet vaut mieux qu'une exception : le reste de
+   l'application continue de fonctionner. */
+const DESSIN_MUET={clearLayers(){},addLayer(){},removeLayer(){},eachLayer(){},addTo(){return this}};
+const dessin=()=>layDraw||DESSIN_MUET;
 let bases={},overs={},aBase='ign_ortho',aOver=new Set(['cadastre']);
 
 const KEY='affut:v4';
@@ -3119,7 +3126,7 @@ function updateReticle(){
   if(PLACE&&PLACE.orig){
     const d=Math.round(L.latLng(PLACE.orig).distanceTo(c));
     extra='<br>'+(d<1000?d+' m':(d/1000).toFixed(2)+' km')+' du point d\u2019origine';
-    layDraw.eachLayer(function(l){if(l instanceof L.Polyline&&!(l instanceof L.Polygon))layDraw.removeLayer(l)});
+    dessin().eachLayer(function(l){if(l instanceof L.Polyline&&!(l instanceof L.Polygon))dessin().removeLayer(l)});
     L.polyline([PLACE.orig,[c.lat,c.lng]],{color:'#7FB8D6',weight:2,dashArray:'5 5',
       interactive:false}).addTo(layDraw);
   }
@@ -3132,7 +3139,7 @@ function updateReticle(){
   $('#retinfo').innerHTML=dms(c.lat,'N','S')+'  '+dms(c.lng,'E','O')+extra;
 }
 function drawProvisional(){
-  layDraw.clearLayers();
+  dessin().clearLayers();
   if(!PLACE||!PLACE.pts||!PLACE.pts.length)return;
   const col=PLACE.what==='terr'?'#7FB8D6':ETYPES[PLACE.what].col;
   PLACE.pts.forEach(p=>L.circleMarker(p,{radius:5,color:'#fff',weight:2,fillColor:col,fillOpacity:1}).addTo(layDraw));
@@ -3143,9 +3150,16 @@ function drawProvisional(){
   }
 }
 function startPoint(what,opts){
+  /* On ne peut viser que sur la carte : si l'on vient d'un autre
+     onglet — du Chantier, pour poser le repere d'une parcelle — il
+     faut y aller d'abord, sinon le reticule s'allume derriere une
+     page qui ne le montre pas et la barre de validation reste cachee.
+     L'appel doit preceder la creation de PLACE : allerVue appelle
+     stopPlace() en quittant la carte, ce qui effacerait la pose. */
+  if(vueCourante()!=='map')allerVue('map');
   PLACE={mode:'point',what:what};
   if(opts){PLACE.rec=opts.rec;PLACE.orig=opts.orig}
-  layDraw.clearLayers();
+  dessin().clearLayers();
   if(PLACE.orig){
     L.circleMarker(PLACE.orig,{radius:7,color:'#F2F0E6',weight:2,fillColor:'#8CA294',
       fillOpacity:1,interactive:false}).addTo(layDraw);
@@ -3164,6 +3178,8 @@ function startPoint(what,opts){
   updateReticle();
 }
 function startShape(what,geo){
+  /* Meme raison que startPoint : on ne trace que sur la carte. */
+  if(vueCourante()!=='map')allerVue('map');
   PLACE={mode:'shape',what:what,geo:geo,pts:[]};
   $('#reticle').classList.add('on');$('#retinfo').classList.add('on');
   $('#act-main svg').style.display='none';$('#act-main').className='big primary';
@@ -3171,11 +3187,11 @@ function startShape(what,geo){
   $('#act-alt').style.display='flex';$('#act-alt').textContent='Poser ici';
   $('#act-cancel').style.display='flex';$('#act-cancel').textContent='Annuler';
   $('#act-map').style.display='none';$('#typebar').classList.remove('on');
-  layDraw.clearLayers();syncShapeBar();updateReticle();
+  dessin().clearLayers();syncShapeBar();updateReticle();
 }
 function stopPlace(){
   if(map)map.off('move',majCadrage);
-  PLACE=null;layDraw.clearLayers();
+  PLACE=null;dessin().clearLayers();
   $('#reticle').classList.remove('on');$('#retinfo').classList.remove('on');
   $('#act-alt').style.display='none';$('#act-cancel').style.display='none';
   $('#act-cancel').textContent='Annuler';$('#act-main').disabled=false;hideHint();
@@ -4337,7 +4353,7 @@ function startCadrage(){
 function majCadrage(){
   if(!PLACE||PLACE.mode!=='cadrage')return;
   const ring=cadreCourant(),ha=Math.round(areaHa(ring));
-  layDraw.clearLayers();
+  dessin().clearLayers();
   L.polygon(ring,{color:'#7FB8D6',weight:3,dashArray:'8 5',fillColor:'#7FB8D6',fillOpacity:.08,
     interactive:false}).addTo(layDraw);
   $('#act-main-t').textContent='Cr\u00e9er ici \u2014 '+ha+' ha';
@@ -6667,19 +6683,29 @@ function renderStats(){
 function renderAll(){renderAllMap();renderLog();renderStats();syncPortee()}
 
 /* ---------- navigation ---------- */
-$$('.tab').forEach(function(t){t.onclick=function(){
-  const v=t.dataset.v;
-  $$('.tab').forEach(x=>x.classList.toggle('on',x===t));
+/* Extrait du gestionnaire d'onglet pour etre appelable de partout.
+   Poser un repere depuis l'onglet Chantier allumait le reticule sans
+   montrer la carte : la barre de validation est masquee hors de la
+   vue carte, et l'on se retrouvait devant la liste des chantiers sans
+   comprendre. Toute pose sur la carte commence donc par y aller. */
+function allerVue(v){
+  $$('.tab').forEach(x=>x.classList.toggle('on',x.dataset.v===v));
   $('#v-map').classList.toggle('on',v==='map');
   $('#v-log').classList.toggle('on',v==='log');
   $('#v-stat').classList.toggle('on',v==='stat');
   $('#v-cha').classList.toggle('on',v==='cha');
   $('#actionbar').style.display=v==='map'?'flex':'none';
   if(v==='cha'){ chaChoisis=null; renderChantier() }
-  if(v==='map'){setTimeout(()=>map.invalidateSize(),60); if(!PLACE)syncActionBar();
+  if(v==='map'){setTimeout(()=>{try{map.invalidateSize()}catch(e){}},60);
+    if(!PLACE)syncActionBar();
     if(sbPret())renderMembres();}
   else{ if(PLACE)stopPlace(); $('#typebar').classList.remove('on'); }
-}});
+}
+function vueCourante(){
+  const t=$$('.tab').find(x=>x.classList.contains('on'));
+  return t?t.dataset.v:'map';
+}
+$$('.tab').forEach(function(t){t.onclick=function(){ allerVue(t.dataset.v) }});
 $('#t-chat').onclick=ouvrirChat;
 $('#ch-onglets').onclick=function(e){
   const b=e.target.closest('[data-v]'); if(!b)return;
