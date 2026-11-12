@@ -10047,6 +10047,23 @@ function renderParcelle(){
       '<button class="mesadd" id="pa-desituer" style="margin-top:9px">'+
       'Retirer les repères</button></div>';
   }
+  /* Un releve plus long que sa grille veut dire que la grille a
+     retreci sous lui. Aucun caractere n'est perdu, mais ils sont tous
+     relus a la mauvaise place : la carte et les comptes sont faux.
+     L'application affichait ces chiffres sans un mot. */
+  if(rel&&String(rel.etats||'').length!==nbArbresDe(p)){
+    const n=String(rel.etats||'').length, att=nbArbresDe(p);
+    al+='<div class="pdu urgent"><b>Les chiffres de cette fiche sont faux.</b><br>'+
+      'Le relevé compte '+n+' états pour une grille de '+att+
+      ' emplacements ('+p.nbLignes+' × '+p.nbArbres+'). '+
+      (n>att
+        ? 'La grille a été réduite sous un relevé déjà fait : ses états sont relus '+
+          'à la mauvaise place, ligne après ligne.'
+        : 'La grille a été agrandie après le relevé : il manque des états.')+
+      '<br><br>Rien n’est perdu — les états sont intacts. Il faut rétablir les '+
+      'bonnes dimensions dans « Modifier la grille », ou recharger le relevé '+
+      'depuis le serveur.</div>';
+  }
   /* Des lignes vides en fin de grille : des rangees de ronds qui ne
      veulent rien dire, et qu'on peut retirer sans rien perdre. */
   const nv=rel?lignesVidesFin(p,rel.etats):0;
@@ -10473,6 +10490,7 @@ brancher('#pn-points',function(e){
 })();
 function enregistrerParcelle(){
   if(!pnDraft||!pnDraft.grille)return;
+  let garde=null;      /* dimensions protegees : de quoi le dire ensuite */
   const g=pnDraft.grille;
   const ex=parcelleDe(pnDraft.id);
   const p=ex||{id:pnDraft.id};
@@ -10489,14 +10507,42 @@ function enregistrerParcelle(){
   p.planteLe=pnDraft.planteLe||'';
   p.oriLat=g.oriLat; p.oriLng=g.oriLng; p.cap=g.cap;
   p.ecartArbre=g.ecartArbre; p.ecartLigne=g.ecartLigne;
-  p.nbLignes=g.nbLignes; p.nbArbres=g.nbArbres;
+  /* Les dimensions deduites des trois reperes ne doivent JAMAIS
+     ecraser celles d'une parcelle deja relevee. Un releve est
+     positionnel : ses etats se lisent ligne par ligne a partir du
+     nombre d'arbres par ligne. Passer de 9 x 72 a 5 x 78 ne perd
+     aucun caractere, mais les relit tous a la mauvaise place — la
+     carte devient fausse et les comptes avec elle, sans le moindre
+     avertissement. Un repere sert a SITUER la parcelle, pas a la
+     redimensionner. */
+  const dejaReleve=relevesDe(p.id).length>0;
+  const change=(p.nbLignes!=null&&
+    (g.nbLignes!==p.nbLignes||g.nbArbres!==p.nbArbres));
+  if(dejaReleve&&change){
+    garde={avant:p.nbLignes+' × '+p.nbArbres, calcule:g.nbLignes+' × '+g.nbArbres};
+  }else{
+    p.nbLignes=g.nbLignes; p.nbArbres=g.nbArbres;
+  }
   p.travaux=pnDraft.travaux||p.travaux||[];
   p.equipes=p.equipes||equipesDe({lat:g.oriLat,lng:g.oriLng});
   marquerParc(p);
   if(!ex)ST.parcelles.push(p);
   pnDraft=null; save(); closeAll(); renderAll();
   setTimeout(function(){ouvrirParcelle(p.id)},240);
-  toast(nbArbresDe(p)+' emplacements · '+vir(surfaceGrille(p),2)+' ha');
+  if(garde){
+    /* Le dire, et expliquer pourquoi : sinon l'utilisateur croit que
+       sa correction n'a pas ete prise. */
+    setTimeout(function(){
+      askConfirm('Grille conservée',
+        'Les repères ont bien été enregistrés, et la parcelle est située.<br><br>'+
+        'En revanche la grille reste à <b>'+esc(garde.avant)+'</b>. Le calcul à '+
+        'partir des repères donnait '+esc(garde.calcule)+', mais cette parcelle '+
+        'porte déjà un relevé : ses états se lisent ligne par ligne, et changer '+
+        'le nombre d’arbres par ligne les décalerait tous.<br><br>'+
+        'Si la grille est réellement différente, refaites le relevé après avoir '+
+        'corrigé les dimensions.','Compris',function(){});
+    },700);
+  }else toast(nbArbresDe(p)+' emplacements · '+vir(surfaceGrille(p),2)+' ha');
 }
 
 /* --- la fiche parcelle --- */
