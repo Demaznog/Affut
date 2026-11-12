@@ -303,6 +303,11 @@ body.attente{opacity:.5}
 /* Le repere et sa croix d'effacement sur la meme ligne. */
 /* Le point que l'on fait glisser pour poser un repere. Large au
    doigt, mais troue au centre : on doit voir l'arbre qu'on vise. */
+/* L'etiquette du nom au centre de la parcelle, sur la carte. */
+.etiqparc{background:none;border:0;pointer-events:none}
+.etiqparc span{display:inline-block;transform:translate(-50%,-50%);
+  white-space:nowrap;font-size:12px;font-weight:700;color:#EAF2EC;
+  text-shadow:0 1px 3px rgba(0,0,0,.9),0 0 2px rgba(0,0,0,.9)}
 .pinpose{background:none;border:0}
 .pinpose i{display:block;width:36px;height:36px;border-radius:50%;
   border:3px solid #7FB8D6;box-shadow:0 0 0 2px rgba(0,0,0,.45),0 3px 10px rgba(0,0,0,.5);
@@ -3184,7 +3189,7 @@ function startPoint(what,opts){
   PLACE={mode:'point',what:what};
   if(opts){PLACE.rec=opts.rec;PLACE.orig=opts.orig}
   dessin().clearLayers();
-  if(PLACE.orig&&what!=='parcpt'){
+  if(PLACE.orig&&what!=='parcpt'&&what!=='parcsit'){
     L.circleMarker(PLACE.orig,{radius:7,color:'#F2F0E6',weight:2,fillColor:'#8CA294',
       fillOpacity:1,interactive:false}).addTo(layDraw);
   }
@@ -3193,7 +3198,7 @@ function startPoint(what,opts){
      deplacer toute la carte, et l'arbre finit cache sous la croix.
      Un point que l'on fait glisser se place directement, du doigt, et
      la vue ne bouge pas. */
-  if(what==='parcpt'){
+  if(what==='parcpt'||what==='parcsit'){
     try{
       const c0=map.getCenter();
       const d=PLACE.orig||[c0.lat,c0.lng];
@@ -3214,7 +3219,8 @@ function startPoint(what,opts){
   $('#act-alt').style.display='none';$('#act-cancel').style.display='flex';
   $('#act-map').style.display='none';$('#typebar').classList.remove('on');
   const titres={obs:'Position de la fiche',fiche:'Corriger la position',
-    deplacer:'D\u00e9placer la fiche',parcpt:'Rep\u00e8re de la grille'};
+    deplacer:'D\u00e9placer la fiche',parcpt:'Rep\u00e8re de la grille',
+    parcsit:'Situer la parcelle'};
   showHint(titres[what]||('Placer : '+(ETYPES[what]?ETYPES[what].n:what)),
     PLACE.orig
       ? 'Le point gris est la position actuelle. Amenez le r\u00e9ticule o\u00f9 l\u2019animal se trouvait, puis validez.'
@@ -3304,6 +3310,9 @@ $('#act-cancel').onclick=function(){
   if(PLACE&&PLACE.mode==='shape'&&PLACE.pts.length){
     PLACE.pts.pop();drawProvisional();syncShapeBar();updateReticle();return}
   if(PLACE&&PLACE.what==='terr')pendingTerr=null;
+  /* Annuler abandonne la mise en place en cours. On ne peut pas le
+     faire dans stopPlace, qui passe entre les deux points. */
+  if(PLACE&&PLACE.what==='parcsit'&&SIT){ SIT=null; toast('Mise en place abandonnée') }
   stopPlace();
 };
 function centreTerr(t){
@@ -4154,6 +4163,9 @@ $('#act-main').onclick=async function(){
   }
   if(PLACE.mode==='cadrage'){
     const ring=cadreCourant();map.off('move',majCadrage);stopPlace();finishTerr(ring);return}
+  if(PLACE.mode==='point'&&PLACE.what==='parcsit'){
+    if(validerSituer(c.lat,c.lng))return;
+  }
   if(PLACE.mode==='point'){
     if(PLACE.what==='deplacer'){
       const r=ST.recs.find(x=>x.id===PLACE.rec);
@@ -8794,6 +8806,96 @@ function rognerLignesVides(p){
   save();
   return n;
 }
+/* ---------- situer une parcelle deja decrite ----------
+   Placer une parcelle sur la carte et la decrire sont deux gestes
+   differents, et les confondre a coute cher : l'editeur de grille
+   demande trois reperes et RECALCULE les dimensions, ce qui n'a aucun
+   sens quand la grille est deja connue et le releve deja fait.
+   Ici, tout est connu sauf l'endroit. Deux points suffisent : le
+   premier et le dernier arbre de la ligne 1 donnent l'origine et le
+   cap. Rien d'autre n'est touche. */
+let SIT=null;        /* {id, etape:'A'|'B', A:[lat,lng]} */
+function situerParcelle(id){
+  const p=parcelleDe(id); if(!p)return;
+  SIT={id:id, etape:'A', A:null};
+  closeAll();
+  setTimeout(function(){ etapeSituer() },220);
+}
+function etapeSituer(){
+  if(!SIT)return;
+  const p=parcelleDe(SIT.id); if(!p){SIT=null;return}
+  const A=SIT.etape==='A';
+  startPoint('parcsit',{orig:A?null:SIT.A});
+  try{
+    if(aBase!=='ign_ortho'&&aBase!=='esri')
+      setBase((bases.ign_ortho&&bases.ign_ortho._ko<8)?'ign_ortho':'esri',true);
+    const cible=SIT.A||(parcelleSituee(p)?[p.oriLat,p.oriLng]:null);
+    if(cible)map.setView(cible,Math.max(map.getZoom(),18));
+    else{
+      const t=ST.terr.find(y=>y.id===ST.aT)||ST.terr[0];
+      if(t&&t.ring&&t.ring.length>2)map.fitBounds(L.latLngBounds(t.ring).pad(0.1));
+      else if(map.getZoom()<16)map.setZoom(17);
+    }
+  }catch(e){}
+  showHint(A?'1 sur 2 — le premier arbre':'2 sur 2 — le dernier arbre de la même ligne',
+    A ? 'Faites glisser le point bleu sur le PREMIER arbre de la ligne 1, '+
+        'puis validez. La carte ne bouge pas.'
+      : 'Maintenant le DERNIER arbre de cette même ligne 1, à l’autre bout. '+
+        'Ces deux points donnent l’orientation de toute la parcelle.');
+}
+/* Enregistre le point valide pendant une mise en place. */
+function validerSituer(lat,lng){
+  if(!SIT)return false;
+  const p=parcelleDe(SIT.id); if(!p){SIT=null;return true}
+  if(SIT.etape==='A'){
+    SIT.A=[lat,lng]; SIT.etape='B';
+    stopPlace();
+    setTimeout(function(){ etapeSituer() },260);
+    return true;
+  }
+  const d=distanceLocale(SIT.A[0],SIT.A[1],lat,lng);
+  const attendu=Math.abs(p.ecartArbre||0)*Math.max(1,(p.nbArbres||1)-1);
+  stopPlace();
+  const poser=function(){
+    p.oriLat=SIT.A[0]; p.oriLng=SIT.A[1];
+    p.cap=capEntre(SIT.A[0],SIT.A[1],lat,lng);
+    marquerParc(p); save(); SIT=null;
+    renderAll(); montrerParcelleSurCarte(p);
+    setTimeout(function(){ouvrirParcelle(p.id)},300);
+    toast('Parcelle située');
+  };
+  /* Un ecart franc entre la distance mesuree et celle qu'implique la
+     grille veut dire qu'un des deux points est sur le mauvais arbre.
+     Le dire AVANT d'enregistrer, plutot que de laisser une parcelle
+     de travers qu'il faudra defaire. */
+  if(attendu>0&&Math.abs(d-attendu)/attendu>0.12){
+    askConfirm('Les deux points ne collent pas à la grille',
+      'Vos deux repères sont distants de <b>'+Math.round(d)+' m</b>. Pour '+
+      p.nbArbres+' arbres espacés de '+vir(Math.abs(p.ecartArbre),1)+' m, '+
+      'la ligne devrait mesurer <b>'+Math.round(attendu)+' m</b>.<br><br>'+
+      'L’un des deux points est probablement sur le mauvais arbre. Vous pouvez '+
+      'quand même enregistrer : la parcelle sera placée, mais de travers.',
+      'Enregistrer quand même',poser);
+    return true;
+  }
+  poser();
+  return true;
+}
+/* Montrer la parcelle sur la carte : c'est la reponse a « ou est-elle ». */
+let layParc=null;
+function montrerParcelleSurCarte(p){
+  try{
+    if(layParc){map.removeLayer(layParc);layParc=null}
+    const c=coinsParcelle(p); if(!c)return;
+    layParc=L.layerGroup().addTo(map);
+    L.polygon([c.A,c.B,c.D,c.C],{color:'#7FB8D6',weight:2,fillColor:'#7FB8D6',
+      fillOpacity:.14}).addTo(layParc);
+    L.marker(c.centre,{interactive:false,icon:L.divIcon({className:'etiqparc',
+      iconSize:[0,0],html:'<span>'+esc(p.nom||'Parcelle')+'</span>'})}).addTo(layParc);
+    allerVue('map');
+    map.fitBounds(L.latLngBounds([c.A,c.B,c.C,c.D]).pad(0.25));
+  }catch(e){}
+}
 /* Une parcelle est situee quand on peut placer chacun de ses arbres
    sur une carte : il y faut l'origine ET l'orientation. */
 function parcelleSituee(p){
@@ -10329,8 +10431,13 @@ function renderParcelles(){
     const age=agePlantation(p), sp=p.essence?SP[p.essence]:null;
     return '<button class="ptrav" data-parc="'+esc(p.id)+'" style="width:100%;text-align:left">'+
       '<span class="pn"><b style="font-size:14.5px">'+esc(p.nom||'Parcelle')+'</b>'+
+      /* La surface du TERRAIN et les arbres REELLEMENT plantes, comme
+         sur la fiche : la grille englobe le bois, la haie et la roche,
+         et annoncer 3,18 ha pour 2,05 reels fausse tout jugement. */
       '<small>'+[sp?sp.nom:'',p.cultivar||'',age!=null?age+' saison'+(age>1?'s':''):'',
-        vir(surfaceGrille(p),2)+' ha',nbArbresDe(p)+' emplacements'].filter(Boolean).join(' · ')+
+        vir(an?an.surfaceRelevee:surfaceGrille(p),2)+' ha',
+        an?(an.plantes+' plantés'):(nbArbresDe(p)+' emplacements')
+      ].filter(Boolean).join(' · ')+
       '</small>'+
       '<small>'+(an
         ? an.manquant+' à remplacer · '+vir(an.tauxManquant*100,1)+' % · relevé le '+
@@ -10650,10 +10757,10 @@ brancher('#pa-alerte',function(e){
     return;
   }
   if(!e.target.closest('#pa-situer'))return;
-  const p=parcelleDe(paId); if(!p)return;
-  closeSheet('#sh-parc');
-  setTimeout(function(){ ouvrirParcelleNouvelle(p);
-    toast('Posez les repères A et B sur la carte') },200);
+  if(!paId)return;
+  /* Deux points, pas l'editeur de grille : la grille est deja connue
+     et le releve deja fait, seul l'endroit manque. */
+  situerParcelle(paId);
 });
 brancher('#pa-zoom',function(e){
   const b=e.target.closest('[data-pz]'); if(!b)return;
