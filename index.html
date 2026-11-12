@@ -3314,6 +3314,7 @@ function showHint(t,sub){$('#hint-t').textContent=t;$('#hint-s').textContent=sub
   $('#hint').classList.add('on');$('#zoomtag').classList.add('on');syncZoomTag()}
 function hideHint(){$('#hint').classList.remove('on');$('#zoomtag').classList.remove('on')}
 $('#act-alt').onclick=function(){
+  if(PLACE&&PLACE.mode==='calque'){ amenerCalqueIci(); return }
   if(!PLACE||PLACE.mode!=='shape')return;
   const c=map.getCenter();pushPoint([c.lat,c.lng]);
 };
@@ -8846,28 +8847,32 @@ function demarrerCalque(p){
   if(parcelleSituee(p)){ lat=p.oriLat; lng=p.oriLng; cap=p.cap;
     try{map.setView([lat,lng],Math.max(map.getZoom(),18))}catch(e){} }
   else{
-    try{
-      const t=ST.terr.find(y=>y.id===ST.aT)||ST.terr[0];
-      if(t&&t.ring&&t.ring.length>2)map.fitBounds(L.latLngBounds(t.ring).pad(0.1));
-      else if(map.getZoom()<16)map.setZoom(17);
-    }catch(e){}
+    /* On ne devine PAS un territoire : ST.terr[0] envoyait la grille
+       a huit cents kilometres, sur un territoire qui n'a rien a voir
+       — et les poignees avec elle, hors de l'ecran, impossibles a
+       saisir. On la pose au centre de ce qu'on a sous les yeux, et le
+       bouton « Amener ici » la rappelle a tout moment. */
+    try{ if(map.getZoom()<16)map.setZoom(17) }catch(e){}
     const c=map.getCenter();
-    /* Pose au centre, la grille centree sur l'ecran plutot que son
-       coin : on la voit entiere des le premier instant. */
-    const L0=Math.max(1,(p.nbLignes||1)-1), R0=Math.max(1,(p.nbArbres||1)-1);
-    const d=decaler(c.lat,c.lng,L0*Math.abs(p.ecartLigne||0)/2,
-                                -R0*Math.abs(p.ecartArbre||0)/2);
-    lat=d[0]; lng=d[1]; cap=90;
+    lat=c.lat; lng=c.lng; cap=90;   /* recadre juste apres, une fois SIT pose */
   }
   SIT={id:p.id, lat:lat, lng:lng, cap:cap, cal:null, hA:null, hR:null};
   PLACE={mode:'calque',what:'parcsit'};
+  /* Une grille neuve se pose centree sur l'ecran : on la voit entiere
+     des le premier instant, et la meme regle sert au bouton « Amener
+     ici » — une seule facon de centrer, qui tient compte du cap. */
+  const neuve=!parcelleSituee(p);
   $('#reticle').classList.remove('on');
   $('#retinfo').classList.add('on');
   $('#act-main-t').textContent='Valider la position';
   $('#act-main svg').style.display='none';$('#act-main').className='big primary';
-  $('#act-alt').style.display='none';$('#act-cancel').style.display='flex';
+  /* La poignee est a l'endroit de la grille : si celle-ci est loin,
+     il n'y a rien a saisir. Ce bouton la ramene au centre de l'ecran,
+     ce qui rend la pose possible quel que soit le point de depart. */
+  $('#act-alt').style.display='flex';$('#act-alt').textContent='Amener ici';
+  $('#act-cancel').style.display='flex';
   $('#act-map').style.display='none';$('#typebar').classList.remove('on');
-  dessinerCalque(true);
+  if(neuve)amenerCalqueIci(true); else dessinerCalque(true);
   showHint('Posez la grille sur vos arbres',
     'Faites glisser le disque plein pour déplacer toute la parcelle, et le '+
     'disque creux au bout de la première ligne pour la faire pivoter. '+
@@ -8927,6 +8932,28 @@ function dessinerCalque(refaireLesPoignees){
     SIT.hA.on('drag',bougerA); SIT.hA.on('dragend',bougerA);
     SIT.hR.on('drag',bougerR); SIT.hR.on('dragend',function(){bougerR();caler()});
   }
+}
+/* Ramener la grille au centre de l'ecran, en la gardant centree : on
+   la veut entiere sous les yeux, pas son coin. */
+/* Ou poser l'origine pour que la grille soit CENTREE sur un point.
+   Le decalage du centre vers le coin est une demi-diagonale, tournee
+   du cap : sans cette rotation, la grille sauterait a cote des que le
+   cap n'est plus nul. Fonction pure, pour etre verifiable. */
+function coinDepuisCentre(p,cap,lat,lng){
+  const L0=Math.max(1,(p.nbLignes||1)-1), R0=Math.max(1,(p.nbArbres||1)-1);
+  const r=(cap||0)*Math.PI/180;
+  const dr=-R0*Math.abs(p.ecartArbre||0)/2, dl=-L0*Math.abs(p.ecartLigne||0)/2;
+  return decaler(lat,lng, dr*Math.cos(r)-dl*Math.sin(r),
+                          dr*Math.sin(r)+dl*Math.cos(r));
+}
+function amenerCalqueIci(muet){
+  if(!SIT)return;
+  const p=parcelleDe(SIT.id); if(!p)return;
+  let c; try{ c=map.getCenter() }catch(e){ return }
+  const o=coinDepuisCentre(p,SIT.cap,c.lat,c.lng);
+  SIT.lat=o[0]; SIT.lng=o[1];
+  dessinerCalque(true);
+  if(!muet)toast('Grille amenée ici');
 }
 function arreterCalque(){
   if(!SIT)return;
@@ -9845,13 +9872,13 @@ function poserRepereParcelle(k){
     let cible=(pnDraft&&pnDraft[k])||null;
     if(!cible&&pnDraft)cible=pnDraft.A||pnDraft.B||pnDraft.C||null;
     if(!cible&&pnDraft&&pnDraft.oriLat!=null)cible=[pnDraft.oriLat,pnDraft.oriLng];
+    /* On ne saute PAS sur ST.terr[0] : le premier territoire de la
+       liste n'a aucune raison d'etre le bon, et peut se trouver a
+       huit cents kilometres. Faute de point connu, on reste ou l'on
+       est — l'utilisateur sait ou il veut aller, l'application non. */
     try{
       if(cible)map.setView(cible,Math.max(map.getZoom(),18));
-      else{
-        const t=ST.terr.find(y=>y.id===ST.aT)||ST.terr[0];
-        if(t&&t.ring&&t.ring.length>2)map.fitBounds(L.latLngBounds(t.ring).pad(0.1));
-        else if(map.getZoom()<16)map.setZoom(17);
-      }
+      else if(map.getZoom()<16)map.setZoom(17);
     }catch(e){}
     showHint('Repère '+k+' — '+x.t,
       'Faites glisser le point bleu sur cet arbre, puis validez. '+
