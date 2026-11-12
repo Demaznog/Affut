@@ -301,6 +301,15 @@ body.attente{opacity:.5}
 
 /* Les trois reperes de la grille. */
 /* Le repere et sa croix d'effacement sur la meme ligne. */
+/* Le point que l'on fait glisser pour poser un repere. Large au
+   doigt, mais troue au centre : on doit voir l'arbre qu'on vise. */
+.pinpose{background:none;border:0}
+.pinpose i{display:block;width:36px;height:36px;border-radius:50%;
+  border:3px solid #7FB8D6;box-shadow:0 0 0 2px rgba(0,0,0,.45),0 3px 10px rgba(0,0,0,.5);
+  position:relative;background:rgba(127,184,214,.14)}
+.pinpose i::after{content:'';position:absolute;left:50%;top:50%;width:5px;height:5px;
+  margin:-2.5px 0 0 -2.5px;border-radius:50%;background:#fff;
+  box-shadow:0 0 0 1.5px rgba(0,0,0,.5)}
 .pnptl{display:flex;align-items:stretch;gap:7px;margin-bottom:8px}
 .pnptl .pnpt{flex:1;margin-bottom:0}
 .pnptx{width:46px;flex:none;border-radius:14px;background:var(--anthracite-2);
@@ -3126,8 +3135,17 @@ function visibleCarte(r){
 function renderAllMap(){renderTerr();renderBat();renderRecs()}
 
 /* ---------- placement et trace ---------- */
+/* Le point a glisser remplace le reticule : c'est LUI que les
+   coordonnees affichees doivent suivre, et lui que la validation doit
+   lire. Sinon on valide le centre de l'ecran pendant qu'on regarde le
+   point ailleurs. */
+function pointVise(){
+  if(PLACE&&PLACE.pin){ try{ return PLACE.pin.getLatLng() }catch(e){} }
+  return map.getCenter();
+}
+function majPinPose(){ updateReticle() }
 function updateReticle(){
-  const c=map.getCenter();
+  const c=pointVise();
   let extra='';
   if(PLACE&&PLACE.orig){
     const d=Math.round(L.latLng(PLACE.orig).distanceTo(c));
@@ -3166,11 +3184,31 @@ function startPoint(what,opts){
   PLACE={mode:'point',what:what};
   if(opts){PLACE.rec=opts.rec;PLACE.orig=opts.orig}
   dessin().clearLayers();
-  if(PLACE.orig){
+  if(PLACE.orig&&what!=='parcpt'){
     L.circleMarker(PLACE.orig,{radius:7,color:'#F2F0E6',weight:2,fillColor:'#8CA294',
       fillOpacity:1,interactive:false}).addTo(layDraw);
   }
-  $('#reticle').classList.add('on');$('#retinfo').classList.add('on');
+  /* Un repere de grille se pose sur UN arbre precis, qu'il faut voir
+     pendant qu'on vise. Le reticule au centre de l'ecran oblige a
+     deplacer toute la carte, et l'arbre finit cache sous la croix.
+     Un point que l'on fait glisser se place directement, du doigt, et
+     la vue ne bouge pas. */
+  if(what==='parcpt'){
+    try{
+      const c0=map.getCenter();
+      const d=PLACE.orig||[c0.lat,c0.lng];
+      PLACE.pin=L.marker(d,{draggable:true,autoPan:true,zIndexOffset:900,
+        icon:L.divIcon({className:'pinpose',iconSize:[36,36],iconAnchor:[18,18],html:'<i></i>'})
+      }).addTo(layDraw);
+      PLACE.pin.on('drag',majPinPose);
+      PLACE.pin.on('dragend',majPinPose);
+    }catch(e){ PLACE.pin=null }
+  }
+  /* Deux cibles a l'ecran se contredisent : avec le point a glisser,
+     le reticule disparait. */
+  if(PLACE.pin)$('#reticle').classList.remove('on');
+  else $('#reticle').classList.add('on');
+  $('#retinfo').classList.add('on');
   $('#act-main-t').textContent='Valider la position';
   $('#act-main svg').style.display='none';$('#act-main').className='big primary';
   $('#act-alt').style.display='none';$('#act-cancel').style.display='flex';
@@ -3197,6 +3235,8 @@ function startShape(what,geo){
 }
 function stopPlace(){
   if(map)map.off('move',majCadrage);
+  /* Le point a glisser part avec le reste. */
+  if(PLACE&&PLACE.pin){try{PLACE.pin.remove()}catch(e){}}
   PLACE=null;dessin().clearLayers();
   $('#reticle').classList.remove('on');$('#retinfo').classList.remove('on');
   $('#act-alt').style.display='none';$('#act-cancel').style.display='none';
@@ -4099,7 +4139,9 @@ function proposerLieu(p){
 }
 $('#act-main').onclick=async function(){
   if(!PLACE&&refusLecture())return;
-  const c=map.getCenter();
+  /* Le point vise, qui est celui qu'on a fait glisser quand il y en a
+     un — et non le centre de l'ecran. */
+  const c=PLACE?pointVise():map.getCenter();
   if(!PLACE){
     $('#act-main').disabled=true;$('#act-main-t').textContent='Position\u2026';
     const p=await positionMaintenant();
@@ -9636,8 +9678,9 @@ function poserRepereParcelle(k){
       }
     }catch(e){}
     showHint('Repère '+k+' — '+x.t,
+      'Faites glisser le point bleu sur cet arbre, puis validez. '+
       (cible
-        ? 'Amenez le réticule sur cet arbre précis, puis validez.'
+        ? 'La carte ne bouge pas : seul le point se déplace.'
         : 'Si vous ne voyez pas votre parcelle, cherchez le lieu avec la loupe, '+
           'puis zoomez jusqu’à distinguer les arbres un par un.'));
   },200);
