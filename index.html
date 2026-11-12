@@ -199,6 +199,14 @@ button:active{transform:scale(.965)}
 .sfoot{padding:11px 14px calc(13px + env(safe-area-inset-bottom));border-top:1px solid var(--trait);
   display:flex;gap:9px;flex:none;background:rgba(15,26,19,.4)}
 .lab{font-size:12.5px;font-weight:600;color:var(--brume-2);margin:20px 4px 9px;letter-spacing:-.01em}
+/* --- un document affiche DANS l'application --- */
+/* Le cadre isole les styles du document des siens : un document
+   est fait pour le papier, fond blanc et encre noire, et n'a rien
+   a voir avec l'ecran sombre de l'application. */
+.docbody{flex:1;min-height:0;padding:0 10px 10px;display:flex}
+.docbody iframe{flex:1;width:100%;border:0;border-radius:14px;background:#fff}
+.docfoot button{flex:1}
+
 
 /* ---------------- contrôles ---------------- */
 .seg{display:flex;gap:7px}
@@ -1520,6 +1528,22 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
   </div>
   <div class="sfoot"><button class="big ghost" data-close="1">Annuler</button>
     <button class="big primary" id="pn-ok" disabled>Enregistrer</button></div>
+</div>
+
+<!-- Les documents s'affichent DANS l'application, dans un cadre.
+     Ouverts dans une fenêtre, ils piégeaient l'utilisateur : une
+     application installée sur l'écran d'accueil n'a ni barre
+     d'adresse ni bouton retour, et le seul recours était de la tuer. -->
+<div class="sheet plein" id="sh-doc">
+  <div class="grab"></div>
+  <div class="shead"><div style="flex:1"><h2 id="doc-titre">Document</h2>
+    <div class="sub" id="doc-sub">—</div></div>
+    <button class="lk" data-close="1">Fermer</button></div>
+  <div class="docbody"><iframe id="doc-cadre" title="Document"></iframe></div>
+  <div class="sfoot docfoot">
+    <button class="big" id="doc-retour">Retour</button>
+    <button class="big primary" id="doc-imprimer">Imprimer ou envoyer</button>
+  </div>
 </div>
 
 <!-- La fiche d'une parcelle : état, diagnostic, travaux, documents. -->
@@ -8546,7 +8570,12 @@ const STYLE_PARC=
      appuyer un mot AU FIL du texte il faut <strong>, sinon la phrase
      se coupe en deux et la suite commence par une ponctuation
      orpheline. */
-  '.enc strong{font-weight:700}';
+  '.enc strong{font-weight:700}'+
+  '.coord{width:100%;border-collapse:collapse;margin:8px 0 2px;font-size:9.5pt}'+
+  '.coord th{text-align:left;font-size:8pt;text-transform:uppercase;'+
+    'letter-spacing:.6px;color:#6E7F75;font-weight:700;padding:0 8px 4px 0}'+
+  '.coord td{padding:3px 8px 3px 0;border-top:1px solid #DED9C9}'+
+  '.coord .mn{font-family:ui-monospace,Menlo,monospace;white-space:nowrap}';
 
 /* Les emplacements a remplacer, regroupes par ligne et condenses en
    plages : « ligne 7, arbres 12 a 15 » se retrouve sur le terrain,
@@ -8640,23 +8669,63 @@ function legendeDoc(etats){
       : '')+
     '</div>';
 }
+/* Une parcelle est situee quand on peut placer chacun de ses arbres
+   sur une carte : il y faut l'origine ET l'orientation. */
+function parcelleSituee(p){
+  return !!(p&&p.cap!=null&&isFinite(p.cap)&&
+            p.oriLat!=null&&isFinite(p.oriLat)&&
+            p.oriLng!=null&&isFinite(p.oriLng));
+}
+/* Les quatre coins et le centre, en degres decimaux : c'est ce qu'un
+   pepinieriste entre dans son telephone pour venir livrer. */
+function coinsParcelle(p){
+  if(!parcelleSituee(p))return null;
+  const L=Math.max(1,p.nbLignes||1), R=Math.max(1,p.nbArbres||1);
+  const A=posArbre(p,0,0), B=posArbre(p,0,R-1),
+        C=posArbre(p,L-1,0), D=posArbre(p,L-1,R-1);
+  const moy=t=>t.reduce((s,x)=>s+x,0)/t.length;
+  return {A:A,B:B,C:C,D:D,
+          centre:[moy([A[0],B[0],C[0],D[0]]), moy([A[1],B[1],C[1],D[1]])]};
+}
+/* Ou se trouve la parcelle, en clair, pour celui qui doit s'y rendre.
+   Les degres decimaux se recopient tels quels dans un telephone ; les
+   degres-minutes-secondes se lisent sur une carte papier. On donne les
+   deux, et les quatre coins, parce qu'un livreur de plants cherche une
+   entree, pas un centre de gravite. */
+function ouEstLaParcelle(p){
+  const c=coinsParcelle(p);
+  if(!c)return '';
+  const dd=t=>vir(t[0],6)+', '+vir(t[1],6);
+  const li=[['Centre de la parcelle',c.centre],
+            ['Coin A — ligne 1, arbre 1',c.A],
+            ['Coin B — ligne 1, arbre '+p.nbArbres,c.B],
+            ['Coin C — ligne '+p.nbLignes+', arbre 1',c.C],
+            ['Coin D — ligne '+p.nbLignes+', arbre '+p.nbArbres,c.D]];
+  return '<div class="enc"><b>Où se trouve la parcelle</b>'+
+    '<table class="coord"><tr><th></th><th>Degrés décimaux</th>'+
+    '<th>Degrés, minutes, secondes</th></tr>'+
+    li.map(function(x){
+      return '<tr><td>'+esc(x[0])+'</td><td class="mn">'+dd(x[1])+'</td>'+
+        '<td class="mn">'+dmsCourt(x[1][0],'N','S')+' '+
+        dmsCourt(x[1][1],'E','O')+'</td></tr>';
+    }).join('')+'</table>'+
+    '<span class="rr">Les lignes courent au cap '+Math.round(p.cap)+'°, '+
+    vir(Math.abs(p.ecartArbre),1)+' m entre deux arbres et '+
+    vir(Math.abs(p.ecartLigne),1)+' m entre deux lignes.</span></div>';
+}
 function commentLireLePlan(p){
   /* Les reperes de la grille ne sont pas toujours poses. Sans garde,
      dmsCourt(null) imprime « 0°00′0.0″N 0°00′0.0″E » — un point au
      large du golfe de Guinee — sur un document qui part chez un
      professionnel. Mieux vaut dire qu'on ne sait pas. */
-  const cale=(p.cap!=null&&isFinite(p.cap)&&
-              p.oriLat!=null&&isFinite(p.oriLat)&&
-              p.oriLng!=null&&isFinite(p.oriLng));
+  const cale=parcelleSituee(p);
   return '<div class="enc"><b>Comment lire ce plan</b>'+
     'Chaque symbole est un emplacement de plantation. Les lignes sont '+
     'numérotées de 1 à '+p.nbLignes+' sur le côté gauche, les arbres de 1 à '+
     p.nbArbres+' en haut.<br>'+
     (cale
       ? 'La flèche indique le nord : le plan est orienté comme le terrain, '+
-        'les lignes y sont dans leur direction réelle ('+Math.round(p.cap)+'°).<br>'+
-        'Repère de départ : la ligne 1 commence à l’arbre situé par '+
-        dmsCourt(p.oriLat,'N','S')+' '+dmsCourt(p.oriLng,'E','O')+'.'
+        'les lignes y sont dans leur direction réelle ('+Math.round(p.cap)+'°).'
       : '<b>Plan schématique, non géoréférencé.</b> Les repères de la grille '+
         '(point de départ et orientation des lignes) n’ont pas encore été '+
         'posés sur le terrain : les numéros de ligne et d’arbre sont justes, '+
@@ -8743,6 +8812,7 @@ function docReplantation(p,rel,surPlace){
     {largeur:760,pasMax:16,texte:'#5C6B63',fond:'#FBFAF6'})+'</div>'+
   legendeDoc(rel.etats)+
   commentLireLePlan(p)+
+  ouEstLaParcelle(p)+
   '<h2 style="font-size:13pt;margin:22px 0 10px">Où se trouvent-ils</h2>'+
   (lignes.length
     ? lignes.map(function(x){
@@ -9030,6 +9100,7 @@ function docEtatParcelle(p,rel,surPlace){
     {largeur:760,pasMax:16,texte:'#5C6B63',fond:'#FBFAF6'})+'</div>'+
   legendeDoc(rel.etats)+
   commentLireLePlan(p)+
+  ouEstLaParcelle(p)+
   verdict+evol+
   (pistes.length
     ? '<h2 style="font-size:13pt;margin:22px 0 10px">Ce que cela peut être</h2>'+
@@ -9062,11 +9133,45 @@ function docEtatParcelle(p,rel,surPlace){
 }
 
 /* Ouvrir un document, ici ou dans un nouvel onglet. */
+/* Le document s'affiche DANS l'application, dans un cadre.
+   window.open piegeait l'utilisateur : une application installee sur
+   l'ecran d'accueil n'a ni barre d'adresse ni bouton retour, et la
+   seule sortie etait de la fermer entierement. Le cadre garde
+   l'application vivante dessous et rend le retour evident. */
+let docOuvert=null;        /* {titre, sous, html} */
 function rendreDoc(doc,surPlace){
   if(surPlace){ document.open(); document.write(doc); document.close(); return }
+  const t=(String(doc).match(/<title>([^<]*)<\/title>/)||[])[1]||'Document';
+  const i=t.indexOf('—');
+  docOuvert={titre:(i>0?t.slice(0,i):t).trim(), sous:(i>0?t.slice(i+1):'').trim(), html:doc};
+  const ti=$('#doc-titre'); if(ti)ti.textContent=docOuvert.titre;
+  const su=$('#doc-sub');   if(su)su.textContent=docOuvert.sous||'Prêt à imprimer ou à envoyer';
+  const c=$('#doc-cadre');
+  if(!c){ /* repli : pas de cadre dans cette version du document */
+    const w=window.open('','_blank');
+    if(!w){toast('Autorisez les fenêtres');return}
+    w.document.open(); w.document.write(doc); w.document.close(); return;
+  }
+  /* srcdoc plutot que document.write dans le cadre : le document garde
+     ses propres styles et ne peut rien casser dans l'application. */
+  c.setAttribute('srcdoc',doc);
+  openSheet('#sh-doc');
+}
+/* Imprimer le CADRE, et non l'application qui l'entoure. Sur iPhone,
+   la feuille d'impression offre « Enregistrer au format PDF », puis le
+   partage : c'est le chemin pour envoyer au pepinieriste. */
+function imprimerDoc(){
+  const c=$('#doc-cadre');
+  try{
+    if(c&&c.contentWindow){ c.contentWindow.focus(); c.contentWindow.print(); return }
+  }catch(e){}
+  /* Un cadre qu'on ne peut pas imprimer directement : on ouvre le
+     document dans une fenetre, ou l'impression marchera. */
+  if(!docOuvert){toast('Aucun document ouvert');return}
   const w=window.open('','_blank');
-  if(!w){toast('Autorisez les fenêtres');return}
-  w.document.open(); w.document.write(doc); w.document.close();
+  if(!w){toast('Impression impossible depuis cette fenêtre');return}
+  w.document.open(); w.document.write(docOuvert.html); w.document.close();
+  setTimeout(function(){try{w.print()}catch(e){}},600);
 }
 /* Branchement des trois boutons. */
 (function(){
@@ -9087,6 +9192,11 @@ function rendreDoc(doc,surPlace){
     const p=parcelleDe(paId); if(!p)return;
     docFicheTerrain(p,dernierReleve(p.id),false);
   };
+})();
+
+(function(){
+  const r=$('#doc-retour');   if(r)r.onclick=function(){ closeAll() };
+  const i=$('#doc-imprimer'); if(i)i.onclick=imprimerDoc;
 })();
 
 /* ---------- lien de partage ---------- */
@@ -9723,6 +9833,20 @@ function renderParcelle(){
          'utile pour en discuter avec le planteur, pas pour replanter.</div>';
     }
   }
+  /* Une parcelle sans reperes n'existe pas sur une carte : ses
+     documents partent chez un tiers en disant « plan schematique »,
+     et personne ne sait ou aller. La capacite de les poser existait,
+     sous un bouton nomme « Modifier la grille » en bas de la fiche —
+     introuvable pour qui cherche a situer sa parcelle. On le dit. */
+  if(!parcelleSituee(p)){
+    al+='<div class="pdu urgent">Cette parcelle n’est pas située sur le terrain. '+
+      'Ses plans sortent donc en « schématique, non géoréférencé » : utilisables '+
+      'pour compter, pas pour s’y rendre. Posez deux repères — le premier et le '+
+      'dernier arbre de la première ligne — et tous les documents porteront '+
+      'ses coordonnées.'+
+      '<button class="mesadd" id="pa-situer" style="margin-top:9px">'+
+      'Situer la parcelle</button></div>';
+  }
   /* Ce qui est a faire a cet age. */
   const jl=jalonsDuMoment(age);
   if(jl.length){
@@ -10227,6 +10351,18 @@ brancher('#pa-carte',function(e){
      ne saurait plus comment s'en debarrasser. */
   paSel=(paSel&&paSel.i===q.i&&paSel.j===q.j)?null:q;
   renderParcelle();
+});
+/* Le bouton « Situer » nait et meurt avec le rendu de l'alerte : le
+   clic se delegue donc au conteneur, qui lui est permanent. Pose
+   directement sur le bouton, il serait perdu au premier rendu suivant.
+   Le meme editeur que « Modifier la grille » : c'est la qu'on pose les
+   reperes, inutile d'en ecrire un second. */
+brancher('#pa-alerte',function(e){
+  if(!e.target.closest('#pa-situer'))return;
+  const p=parcelleDe(paId); if(!p)return;
+  closeSheet('#sh-parc');
+  setTimeout(function(){ ouvrirParcelleNouvelle(p);
+    toast('Posez les repères A et B sur la carte') },200);
 });
 brancher('#pa-zoom',function(e){
   const b=e.target.closest('[data-pz]'); if(!b)return;
