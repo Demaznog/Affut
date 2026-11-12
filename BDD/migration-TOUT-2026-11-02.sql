@@ -109,10 +109,28 @@ create index if not exists parcelle_equipes on parcelle using gin(equipes);
 --  etats : un caractère par emplacement, lu ligne par ligne depuis
 --  l'origine, dans l'ordre logique (et non dans l'ordre de marche).
 --      v  vivant
---      d  dépérissant
---      m  mort sur pied
+--      d  dépérissant — houppier clair, branches mortes
+--      c  à recéper — vivant mais mal conformé : fourchu, couché ou
+--         cassé. On le coupe au ras pour qu'il reparte d'un seul brin.
+--         C'est une tige sur pied : elle compte dans la densité et ne
+--         se commande JAMAIS chez le pépiniériste.
+--      m  mort sur pied — à abattre avant de replanter
 --      a  absent — emplacement vide, rien à abattre avant de replanter
+--      h  hors parcelle — la grille déborde du terrain ici. Jamais
+--         planté, jamais replantable ; hors de tous les pourcentages
+--         et hors de la surface, car une parcelle n'est presque jamais
+--         un rectangle.
+--      r  non plantable — roche, souche, fossé. Dans la parcelle, donc
+--         compté dans la surface, mais ne porte aucune tige. À ne pas
+--         confondre avec h : un sol mince sur roche assoiffe aussi les
+--         arbres qui l'entourent, et l'analyse cherche précisément cela.
 --      ?  non relevé
+--
+--  Aucune contrainte ne restreint ces lettres, et c'est voulu : une
+--  version plus récente de l'application peut en ajouter sans exiger
+--  de migration, et une version plus ancienne qui rencontrerait une
+--  lettre inconnue la lit comme « non relevé » au lieu de rejeter le
+--  relevé entier.
 -- --------------------------------------------------------------------
 create table if not exists releve (
   id          uuid primary key,

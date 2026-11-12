@@ -328,6 +328,33 @@ body.attente{opacity:.5}
 .plegende{display:flex;flex-wrap:wrap;gap:12px;margin-top:9px;padding:0 2px}
 .plegende span{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--brume-2)}
 .plegende i{width:10px;height:10px;border-radius:50%;flex:none}
+/* L'etat « a receper » se dessine en carre sur le plan : la legende
+   doit montrer un carre, sinon elle ment sur ce qu'on va chercher. */
+.plegende i.carre{border-radius:2px}
+/* --- corriger un emplacement depuis le plan --- */
+.paplace{margin-top:10px}
+.pp{background:var(--anthracite-2);border:1px solid var(--trait);
+  border-radius:16px;padding:12px 13px}
+.pphaut{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.pphaut b{font-size:14.5px;font-weight:650;flex:1}
+.pphaut small{display:block;font-size:11.5px;color:var(--brume-2);font-weight:400;
+  margin-top:2px}
+.ppfl{width:38px;height:38px;border-radius:12px;flex:none;
+  background:var(--anthracite-3);border:1px solid var(--trait);
+  color:var(--brume);font-size:17px;line-height:1}
+.ppfl:disabled{opacity:.3}
+.ppx{width:34px;height:34px;border-radius:11px;flex:none;background:none;
+  border:1px solid var(--trait);color:var(--brume-2);font-size:14px}
+.ppetats{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.ppe{min-height:46px;border-radius:12px;background:var(--anthracite-3);
+  border:1px solid var(--trait);color:var(--brume);font-size:12.5px;
+  font-weight:600;display:flex;align-items:center;gap:8px;padding:0 11px;
+  text-align:left}
+.ppe i{width:11px;height:11px;border-radius:50%;flex:none}
+.ppe i.carre{border-radius:2px}
+.ppe.on{border-color:var(--foret-clair);background:rgba(106,203,148,.14)}
+.ppe:active{transform:scale(.97)}
+.ppnote{margin-top:9px;font-size:11.5px;color:var(--brume-2);line-height:1.45}
 
 /* Le verdict de groupement. */
 .pverdict{padding:14px 16px;border-radius:16px;margin:4px 0 2px;
@@ -376,12 +403,17 @@ body.attente{opacity:.5}
 .rvpetit span{font-size:10px;color:var(--brume-2);text-align:center;line-height:1.25}
 .rvpetit:active{transform:scale(.97)}
 .rvpetit.rvd{border-color:rgba(217,162,58,.45);color:#E8C07A}
+.rvpetit.rvc{border-color:rgba(123,104,181,.5);color:#B9AEE0}
 .rvpetit.rvm{border-color:rgba(192,57,43,.45);color:#F2A196}
 .rvpetit.rva{border-color:var(--trait2);color:var(--brume-2)}
 .rvpetit.rvh{border-color:var(--trait);color:var(--brume-2)}
 .rvpetit.rvr{border-color:rgba(107,91,74,.55);color:#B59C7E}
 .rvdeux{display:grid;grid-template-columns:1fr 1fr;gap:9px;flex:none}
 .rvdeux .rvpetit{height:66px}
+/* La seconde rangee — ce qui n'est pas un arbre — se pose plus bas et
+   plus discrete que celle des etats d'arbre. */
+.rvtrois.rvbas .rvpetit{height:66px}
+.rvtrois.rvbas .rvpetit b{font-size:12.5px}
 /* Une ligne qui bute sur la roche se clot d'un geste, pas de vingt. */
 .rvsuite{flex:none;height:46px;border-radius:15px;background:var(--anthracite-2);
   border:1.5px dashed var(--trait2);color:var(--brume-2);font-size:12.5px;
@@ -1490,6 +1522,9 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div class="lab">Où en est la mortalité</div>
     <div id="pa-carte"></div>
     <div id="pa-legende"></div>
+    <!-- Corriger un arbre sans refaire tout le releve : le panneau
+         s'ouvre sous le plan, pour garder les voisins sous les yeux. -->
+    <div id="pa-place"></div>
 
     <div id="pa-diag"></div>
 
@@ -1528,14 +1563,17 @@ input[type=number],input[type=date],input[type=time]{font-family:var(--mono)}
     <div class="rvligne" id="rv-ligne">—</div>
     <div class="rvsens" id="rv-sens">—</div>
     <button class="rvgros" id="rv-v"><b>Vivant</b><span>sur pied, rien à signaler</span></button>
+    <!-- Un arbre est la : dans quel etat ? -->
     <div class="rvtrois">
       <button class="rvpetit rvd" data-e="d"><b>Dépérissant</b><span>houppier clair</span></button>
+      <button class="rvpetit rvc" data-e="c"><b>À recéper</b><span>vivant, mal conformé</span></button>
       <button class="rvpetit rvm" data-e="m"><b>Mort</b><span>sur pied</span></button>
-      <button class="rvpetit rva" data-e="a"><b>Absent</b><span>à replanter</span></button>
     </div>
-    <div class="rvdeux">
+    <!-- Aucun arbre ici : pourquoi ? -->
+    <div class="rvtrois rvbas">
+      <button class="rvpetit rva" data-e="a"><b>Absent</b><span>à replanter</span></button>
       <button class="rvpetit rvh" data-e="h"><b>Hors parcelle</b><span>la grille déborde</span></button>
-      <button class="rvpetit rvr" data-e="r"><b>Non plantable</b><span>roche, souche, fossé</span></button>
+      <button class="rvpetit rvr" data-e="r"><b>Non plantable</b><span>roche, souche</span></button>
     </div>
     <button class="rvsuite" id="rv-suite">Appliquer au reste de la ligne</button>
     <div class="rvinfo" id="rv-info"></div>
@@ -2317,6 +2355,40 @@ function locDel(k){try{localStorage.removeItem(k)}catch(e){}}
 })();
 
 let stockageOk=null;
+/* Ce que le navigateur veut bien accorder a ce site, et ce qui est
+   deja pris. Sans ce chiffre, « le navigateur refuse d'ecrire » ne dit
+   pas s'il faut faire de la place ou changer un reglage — et sur iOS la
+   reponse est presque toujours « faire de la place », parce que les
+   photos d'IndexedDB et l'etat de localStorage se partagent le MEME
+   quota d'origine : des photos trop lourdes empechent d'enregistrer une
+   fiche qui ne pese rien. */
+let quota=null;
+async function mesurerQuota(){
+  try{
+    if(!navigator.storage||!navigator.storage.estimate)return null;
+    const e=await navigator.storage.estimate();
+    if(!e||!e.quota)return null;
+    quota={pris:e.usage||0, total:e.quota, part:(e.usage||0)/e.quota};
+    return quota;
+  }catch(e){ return null }
+}
+/* « 5,0 Mo » et « 1024 Mo » sont justes et se lisent mal. Une decimale
+   seulement quand elle apporte quelque chose, et des gigaoctets des
+   qu'on en tient un. */
+const sansZero=s=>s.replace(/,0$/,'');
+function poids(o){
+  o=Math.max(0,Math.round(o||0));
+  if(o>=1073741824)return sansZero(vir(o/1073741824,1))+' Go';
+  if(o>=1048576)   return sansZero(vir(o/1048576,o>=10485760?0:1))+' Mo';
+  if(o>=1024)      return Math.round(o/1024)+' Ko';
+  return o+' o';
+}
+function texteQuota(){
+  if(!quota)return '';
+  return 'Cet appareil accorde '+poids(quota.total)+' à l’application, '+
+         'dont '+poids(quota.pris)+' déjà utilisés ('+
+         Math.round(quota.part*100)+' %).';
+}
 async function save(){
   ST.fond=aBase;ST.calques=Array.from(aOver);ST.silhouettes=SILHOUETTES;ST.maj=Date.now();
   const j=JSON.stringify(ST);
@@ -2331,19 +2403,70 @@ async function save(){
   try{if(window.storage)await window.storage.set(KEY,j)}catch(e){}
   return ok;
 }
+/* Un appareil peut etre parfaitement sain et montrer une application
+   vide : il suffit qu'il ne connaisse aucune equipe. Chaque navigateur
+   recoit en effet sa propre identite anonyme ; celle d'un second
+   appareil n'appartient a rien, et la synchronisation demande alors au
+   serveur « les donnees de mes equipes » avec une liste vide. Le
+   serveur repond correctement : rien.
+   Jusqu'ici tous les chemins de recuperation se terminaient par un
+   return muet. On voyait une application vide, sans un mot — et l'on
+   en concluait que tout etait perdu, alors que tout etait sur le
+   serveur. Le silence etait le defaut, pas la synchronisation. */
+let sansEquipe=false;
 function majBandeauStockage(){
   const el=$('#alerte');if(!el)return;
   if(stockageOk===false){
     el.classList.add('on');
     el.innerHTML='<b>Enregistrement impossible sur cet appareil</b>'+
       '<button id="al-info">Pourquoi</button>';
-    $('#al-info').onclick=function(){
+    $('#al-info').onclick=async function(){
+      await mesurerQuota();
+      /* Quand la place manque, on le DIT, au lieu de laisser chercher
+         parmi trois causes possibles dont deux seront fausses. */
+      const sature=quota&&quota.part>=0.9;
       askConfirm('Stockage bloqu\u00e9',
-        'Le navigateur refuse d\u2019\u00e9crire. Causes habituelles : navigation priv\u00e9e, '+
-        'stockage sature, ou blocage des donnees de site. Exportez vos fiches maintenant, '+
-        'puis d\u00e9sactivez la navigation priv\u00e9e.','Exporter',exporter);
+        (quota
+          ? texteQuota()+(sature
+              ? ' <b>Il n\u2019y a plus de place.</b> Ce sont presque toujours les photos '+
+                'qui l\u2019occupent : elles partagent le m\u00eame quota que vos fiches, '+
+                'de sorte qu\u2019une photo de trop emp\u00eache d\u2019enregistrer une fiche qui '+
+                'ne p\u00e8se rien. Exportez, puis videz les photos d\u00e9j\u00e0 envoy\u00e9es au '+
+                'serveur depuis \u00ab \u00c9tat des photos \u00bb.'
+              : ' La place ne manque donc pas : la cause est ailleurs \u2014 '+
+                'navigation priv\u00e9e, ou blocage des donn\u00e9es de site dans les '+
+                'r\u00e9glages de Safari.')
+          : 'Le navigateur refuse d\u2019\u00e9crire, sans vouloir dire combien de place '+
+            'il reste. Causes habituelles : navigation priv\u00e9e, stockage satur\u00e9, '+
+            'ou blocage des donn\u00e9es de site.')+
+        ' Exportez vos fiches sans attendre : c\u2019est sans risque.',
+        'Exporter',exporter);
+    };
+  }else if(sansEquipe){
+    /* Le stockage passe d'abord : ne pas pouvoir ecrire est plus grave
+       que ne pas savoir a qui l'on appartient. */
+    el.classList.add('on');
+    el.innerHTML='<b>Cet appareil n’est rattaché à aucune équipe</b>'+
+      '<button id="al-info">Pourquoi</button>';
+    $('#al-info').onclick=function(){
+      askConfirm('Aucune équipe sur cet appareil',
+        'Vos relevés ne sont pas perdus : ils sont sur le serveur. Mais cet '+
+        'appareil ne sait pas à quelle équipe il appartient, et ne peut donc '+
+        'rien redescendre.<br><br>'+
+        'Chaque navigateur reçoit sa propre identité au premier lancement. '+
+        'Celle-ci est neuve : elle n’a encore rejoint aucune équipe.<br><br>'+
+        '<b>Connectez-vous avec la même adresse courriel que sur votre autre '+
+        'appareil</b>, puis ouvrez ici le lien reçu. Vos équipes et vos fiches '+
+        'reviendront. À défaut, saisissez le code de l’équipe.',
+        'Ouvrir Équipe',function(){ openSheet('#sh-equipe') });
     };
   }else el.classList.remove('on');
+}
+/* Appele apres chaque tentative de rattrapage, y compris quand elle
+   echoue : c'est precisement l'echec qui doit se voir. */
+function majRattachement(){
+  sansEquipe=!(ST.equipes||[]).length;
+  majBandeauStockage();
 }
 async function load(){
   const v=locGet(LS);
@@ -3118,6 +3241,15 @@ function distanceLisible(m){
 const ETATS_PLACE=[
   {k:'v',n:'Vivant',      c:'#6ACB94', d:'sur pied, sans signe d’alerte'},
   {k:'d',n:'Dépérissant', c:'#D9A23A', d:'houppier clair, branches mortes'},
+  /* Un arbre a receper est VIVANT : fourchu, couche ou casse, on le
+     coupe au ras pour qu'il reparte droit d'un seul brin. Il ne se
+     remplace donc pas — le confondre avec un mort gonflerait la
+     commande du pepinieriste d'autant d'arbres qu'il y en a.
+     Violet et non ambre : l'ambre sert deja au deperissant, et sur le
+     terrain les deux etats appellent des gestes opposes (on recepe le
+     premier, on surveille le second). Le plan le dessine en plus en
+     carre, pour que la distinction tienne sans la couleur. */
+  {k:'c',n:'À recéper',   c:'#7B68B5', d:'vivant mais mal conformé — à couper au ras'},
   {k:'m',n:'Mort',        c:'#C0392B', d:'mort sur pied — à abattre avant de replanter'},
   {k:'a',n:'Absent',      c:'#5A6B63', d:'emplacement vide — replantable tel quel'},
   /* Une parcelle n'est pas un rectangle. La grille, si : ses coins
@@ -3364,12 +3496,16 @@ function analyserReleve(p,etats,opts){
   /* Un emplacement non releve ne compte ni comme vivant ni comme mort :
      il sort de l'analyse, sinon il diluerait le resultat. */
   const connu=[], mortAt=new Array(N).fill(false);
-  let nbMort=0,nbVivant=0,nbDeper=0,nbAbsent=0,nbInconnu=0,nbHors=0,nbRoche=0;
+  let nbMort=0,nbVivant=0,nbDeper=0,nbRecep=0,nbAbsent=0,nbInconnu=0,nbHors=0,nbRoche=0;
   for(let d=0;d<N;d++){
     const e=ch[d]||'?';
     if(e==='m'){nbMort++;mortAt[d]=true;connu.push(d)}
     else if(e==='v'){nbVivant++;connu.push(d)}
     else if(e==='d'){nbDeper++;connu.push(d)}
+    /* Un arbre a receper occupe sa place et compte dans le peuplement :
+       il entre dans la base des pourcentages et dans la densite, mais
+       jamais dans les manquants. */
+    else if(e==='c'){nbRecep++;connu.push(d)}
     else if(e==='a'){nbAbsent++;connu.push(d)}
     else if(e==='h'||e==='r'){nbHors++;if(e==='r')nbRoche++}   /* hors de tout calcul */
     else nbInconnu++;
@@ -3380,11 +3516,29 @@ function analyserReleve(p,etats,opts){
   /* Les emplacements hors parcelle et non releves sortent des
      pourcentages : le taux de perte porte sur ce qui a ete plante. */
   const base=N-nbInconnu-nbHors;
+  /* Ce qui tient encore debout, et qui fait la densite reelle du
+     peuplement : un depérissant et un arbre a receper sont des tiges,
+     un mort et un emplacement vide n'en sont pas. */
+  const nbSurPied=nbVivant+nbDeper+nbRecep;
+  /* La densite ne se divise PAS par la grille entiere. Une parcelle
+     n'est presque jamais rectangulaire : ici, 311 des 730 places de la
+     grille tombent hors du terrain, et diviser par 3,58 ha au lieu de
+     2,05 donnerait 70 tiges/ha au lieu de 121 — de quoi declarer
+     sinistree une parcelle qui ne l'est pas.
+     La surface qui compte est celle des places reellement DANS la
+     parcelle : les relevees, plus les non plantables, qui sont bien du
+     terrain meme si rien n'y pousse. Les places hors parcelle et les
+     non relevees en sortent. */
+  const maille=Math.abs(p.ecartArbre||0)*Math.abs(p.ecartLigne||0);
+  const surf=(base+nbRoche)*maille/10000;
   const res={
     total:N, vivant:nbVivant, deperissant:nbDeper, mort:nbMort,
+    recepage:nbRecep, surPied:nbSurPied,
     absent:nbAbsent, inconnu:nbInconnu, hors:nbHors, roche:nbRoche,
     manquant:nbManquant,
     releves:base, plantes:base,
+    surfaceRelevee:surf,
+    densiteActuelle:surf?Math.round(nbSurPied/surf):0,
     tauxMort:base?nbMort/base:0,
     tauxManquant:base?nbManquant/base:0,
     taches:[], groupement:null, parLigne:[], parRang:[], bordure:null,
@@ -4014,6 +4168,8 @@ function syncSauvegarde(){
   const n=ST.recs.length, t=ST.terr.length;
   const q=locGet(LS), ko=q?Math.round(q.length/1024):0;
   const d=ST.maj?new Date(ST.maj):null;
+  /* La mesure arrive apres coup : on reaffiche quand elle est la. */
+  if(quota===null)mesurerQuota().then(function(r){ if(r)syncSauvegarde() });
   $('#sv-etat').innerHTML=(stockageOk===false
       ?'<b style="color:#D9705F">Enregistrement impossible : ce navigateur refuse d\u2019\u00e9crire. '+
        'Exportez vos fiches sans attendre.</b><br><br>'
@@ -4021,6 +4177,13 @@ function syncSauvegarde(){
     'Vos donn\u00e9es sont enregistr\u00e9es dans ce navigateur, '+
     'pas dans le fichier du site : mettre l\u2019application \u00e0 jour ne les efface pas.<br><br>'+
     '<b class="mono">'+n+' fiches \u00b7 '+t+' territoire'+(t>1?'s':'')+' \u00b7 '+ko+' Ko</b>'+
+    /* Les fiches pesent quelques Ko, les photos des centaines de Mo, et
+       les deux se partagent le meme quota. Afficher le second chiffre a
+       cote du premier evite de chercher la saturation du mauvais cote. */
+    (quota?'<br><span class="mono" style="font-size:11px">'+
+      'Photos comprises : '+poids(quota.pris)+' sur '+poids(quota.total)+
+      ' accordes ('+Math.round(quota.part*100)+' %)'+
+      (quota.part>=0.9?' \u2014 plus de place':'')+'</span>':'')+
     (d?'<br><span class="mono" style="font-size:11px">Dernier enregistrement : '+
       fmtDay(d)+' \u00e0 '+fmtHM(d)+'</span>':'')+
     '<br><br>Exportez de temps en temps : vider les donn\u00e9es du navigateur, ou changer de t\u00e9l\u00e9phone, '+
@@ -6640,6 +6803,9 @@ function marquer(o){ if(o){o.maj=Date.now(); if(!o.sid)o.sid=uuid4();} return o 
    — c'est elle qui recoit les messages et les pointages.
 --------------------------------------------------------------- */
 function mesEquipes(){ return ST.equipes||[] }
+/* Le bandeau suit l'etat reel : il disparait des qu'une equipe est
+   rejointe, et revient si la derniere est quittee. */
+function equipesChangees(){ try{ majRattachement() }catch(e){} }
 function equipeParId(id){ return mesEquipes().find(e=>e.id===id)||null }
 function equipeSocle(){
   const l=mesEquipes();
@@ -7565,6 +7731,10 @@ $('#dp-renvoyer').onclick=async function(){
   diagPhotos();
 };
 function syncBoutons(){
+  /* Point de passage de tout changement d'appartenance — rejoindre,
+     quitter, retrouver : le bandeau s'y remet a jour sans qu'il faille
+     penser a l'appeler depuis chacun de ces chemins. */
+  equipesChangees();
   const b=$('#eq-boutons'); if(!b)return;
   b.innerHTML= ST.equipe
     ? '<button class="chip" id="eq-sync">Synchroniser</button>'+
@@ -8334,11 +8504,14 @@ const STYLE_PARC=
   '.pleg{display:flex;flex-wrap:wrap;gap:14px;margin:6px 0 18px;font-size:9.5pt;color:#5C6B63}'+
   '.pleg span{display:flex;align-items:center;gap:5px}'+
   '.pleg i{width:9px;height:9px;border-radius:50%;display:inline-block}'+
+  '.pleg i.carre{border-radius:2px}'+
   '.lig{page-break-inside:avoid;margin-bottom:9px;padding:9px 12px;border:1px solid #DCD8CB;'+
     'border-radius:9px;background:#fff}'+
   '.lig b{font-family:ui-monospace,Menlo,monospace;font-size:10.5pt}'+
-  '.lig .rr{display:block;margin-top:4px;font-size:10pt;color:#2E3B34;line-height:1.5}'+
-  '.lig .rr em{font-style:normal;font-family:ui-monospace,Menlo,monospace;font-weight:600}'+
+  /* Non scope a .lig : la meme liste de positions sert aussi dans
+     les encarts, ou elle restait collee au texte precedent. */
+  '.rr{display:block;margin-top:6px;font-size:10pt;color:#2E3B34;line-height:1.5}'+
+  '.rr em{font-style:normal;font-family:ui-monospace,Menlo,monospace;font-weight:600}'+
   '.kchiffres{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 18px}'+
   '.kc{flex:1;min-width:110px;border:1px solid #DCD8CB;border-radius:10px;padding:11px 13px;'+
     'background:#FBFAF6}'+
@@ -8349,11 +8522,28 @@ const STYLE_PARC=
     'border-radius:0 10px 10px 0;margin:14px 0;font-size:10pt;line-height:1.55;'+
     'page-break-inside:avoid}'+
   '.enc.att{border-left-color:#C15346}'+
-  '.enc b{display:block;margin-bottom:4px;font-size:10.5pt}';
+  '.enc b{display:block;margin-bottom:4px;font-size:10.5pt}'+
+  /* Dans un encart, <b> est le titre et passe donc en bloc. Pour
+     appuyer un mot AU FIL du texte il faut <strong>, sinon la phrase
+     se coupe en deux et la suite commence par une ponctuation
+     orpheline. */
+  '.enc strong{font-weight:700}';
 
 /* Les emplacements a remplacer, regroupes par ligne et condenses en
    plages : « ligne 7, arbres 12 a 15 » se retrouve sur le terrain,
    pas une liste de 40 numeros isoles. */
+/* Les positions d'un etat donne, ligne par ligne. Sert aux recepages :
+   ils ne se commandent pas chez le pepinieriste mais se font sur le
+   terrain, et meritent donc leur propre liste. */
+function plagesEtat(p,etats,k){
+  const L=p.nbLignes, R=p.nbArbres, ch=String(etats||''), out=[];
+  for(let i=0;i<L;i++){
+    const ou=[];
+    for(let j=0;j<R;j++)if(ch[i*R+j]===k)ou.push(j);
+    if(ou.length)out.push({i:i, n:ou.length, plages:plages(ou)});
+  }
+  return out;
+}
 function plagesManquants(p,etats){
   const L=p.nbLignes, R=p.nbArbres, ch=String(etats||'');
   const lignes=[];
@@ -8385,32 +8575,74 @@ const plagesTexte=l=>l.map(function(x){
   return x.de===x.a ? String(x.de+1) : (x.de+1)+' à '+(x.a+1);
 }).join(', ');
 
-function enteteDoc(p,titre,soustitre){
+/* « le 12 mars 2026 », ou « en 2026 » si l'on ne connait que l'annee. */
+function dateLongue(d){
+  if(!d)return '';
+  const s=String(d);
+  if(/^\d{4}$/.test(s))return 'en '+s;
+  const x=new Date(s.length>10?s:s+'T12:00:00');
+  if(isNaN(x))return 'en '+s.slice(0,4);
+  return 'le '+x.getDate()+' '+['janvier','février','mars','avril','mai','juin',
+    'juillet','août','septembre','octobre','novembre','décembre'][x.getMonth()]+
+    ' '+x.getFullYear();
+}
+function enteteDoc(p,titre,soustitre,an){
   const sp=p.essence?SP[p.essence]:null, age=agePlantation(p);
+  /* La surface annoncee est celle du TERRAIN, pas celle de la grille.
+     Sur une parcelle non rectangulaire les deux different du simple au
+     double, et c'est la surface qui sert a juger la densite : l'erreur
+     partirait chez le pepinieriste. */
+  const surf=(an&&an.surfaceRelevee)?an.surfaceRelevee:surfaceGrille(p);
   return '<h1>'+esc(titre)+'</h1>'+
     '<div class="sst">'+esc(p.nom||'Parcelle')+
     (sp?' · '+esc(sp.nom):'')+(p.cultivar?' · '+esc(p.cultivar):'')+
-    (age!=null?' · plantée en '+String(p.planteLe).slice(0,4)+', '+
+    /* Date complete, annee comprise : ce document part chez un tiers,
+       qui n'a pas le contexte pour deviner l'annee. */
+    (age!=null?' · plantée '+esc(dateLongue(p.planteLe))+', '+
       age+' saison'+(age>1?'s':'')+' de végétation':'')+
-    ' · '+vir(surfaceGrille(p),2)+' ha · '+
+    ' · '+vir(surf,2)+' ha · '+
     p.nbLignes+' lignes × '+p.nbArbres+' arbres'+
     (soustitre?'<br>'+esc(soustitre):'')+'</div>';
 }
-function legendeDoc(){
-  return '<div class="pleg">'+ETATS_PLACE.map(e=>
-    '<span><i style="background:'+(e.k==='?'?'#fff':e.c)+
+/* La legende ne liste que ce qui figure vraiment sur le plan : annoncer
+   « Dépérissant » et « Non plantable » quand il n'y en a aucun fait
+   chercher au lecteur des symboles qui n'existent pas. */
+function legendeDoc(etats){
+  const ch=String(etats||'');
+  const vus=ETATS_PLACE.filter(e=>e.k!=='h'&&(!ch||ch.indexOf(e.k)>-1));
+  return '<div class="pleg">'+vus.map(e=>
+    '<span><i class="'+(e.k==='c'?'carre':'')+'" style="background:'+
+    (e.k==='?'?'#fff':e.c)+
     (e.k==='?'||e.k==='a'?';border:1.5px solid '+(e.k==='a'?e.c:'#C8C4B6'):'')+
-    '"></i>'+esc(e.n)+'</span>').join('')+'</div>';
+    '"></i>'+esc(e.n)+'</span>').join('')+
+    (ch.indexOf('h')>-1
+      ? '<span style="color:#7A8A80">Un emplacement laissé vide est hors parcelle '+
+        '— la grille y déborde du terrain.</span>'
+      : '')+
+    '</div>';
 }
 function commentLireLePlan(p){
+  /* Les reperes de la grille ne sont pas toujours poses. Sans garde,
+     dmsCourt(null) imprime « 0°00′0.0″N 0°00′0.0″E » — un point au
+     large du golfe de Guinee — sur un document qui part chez un
+     professionnel. Mieux vaut dire qu'on ne sait pas. */
+  const cale=(p.cap!=null&&isFinite(p.cap)&&
+              p.oriLat!=null&&isFinite(p.oriLat)&&
+              p.oriLng!=null&&isFinite(p.oriLng));
   return '<div class="enc"><b>Comment lire ce plan</b>'+
-    'Chaque rond est un emplacement de plantation. Les lignes sont '+
+    'Chaque symbole est un emplacement de plantation. Les lignes sont '+
     'numérotées de 1 à '+p.nbLignes+' sur le côté gauche, les arbres de 1 à '+
-    p.nbArbres+' en haut. La flèche indique le nord : le plan est orienté '+
-    'comme le terrain, les lignes y sont dans leur direction réelle '+
-    '('+Math.round(p.cap)+'°).<br>'+
-    'Repère de départ : la ligne 1 commence à l’arbre situé par '+
-    dmsCourt(p.oriLat,'N','S')+' '+dmsCourt(p.oriLng,'E','O')+'.</div>';
+    p.nbArbres+' en haut.<br>'+
+    (cale
+      ? 'La flèche indique le nord : le plan est orienté comme le terrain, '+
+        'les lignes y sont dans leur direction réelle ('+Math.round(p.cap)+'°).<br>'+
+        'Repère de départ : la ligne 1 commence à l’arbre situé par '+
+        dmsCourt(p.oriLat,'N','S')+' '+dmsCourt(p.oriLng,'E','O')+'.'
+      : '<b>Plan schématique, non géoréférencé.</b> Les repères de la grille '+
+        '(point de départ et orientation des lignes) n’ont pas encore été '+
+        'posés sur le terrain : les numéros de ligne et d’arbre sont justes, '+
+        'mais le plan ne peut pas être reporté sur une carte.')+
+    '</div>';
 }
 
 /* ---------- 1. le plan de replantation ---------- */
@@ -8440,22 +8672,57 @@ function docReplantation(p,rel,surPlace){
   STYLE_DOC+STYLE_PARC+
   '<\/style></head><body>'+
   enteteDoc(p,'Emplacements à replanter',
-    'Relevé pied à pied du '+fmtDate(new Date(rel.faitLe+'T12:00:00')))+
+    'Relevé pied à pied du '+fmtDate(new Date(rel.faitLe+'T12:00:00')),an)+
   '<div class="kchiffres">'+
     '<div class="kc"><b>'+total+'</b><span>À remplacer</span></div>'+
     '<div class="kc"><b>'+an.mort+'</b><span>Morts sur pied</span></div>'+
     '<div class="kc"><b>'+an.absent+'</b><span>Emplacements vides</span></div>'+
     '<div class="kc"><b>'+vir(an.tauxManquant*100,1)+' %</b><span>Taux de perte</span></div>'+
+  '<div class="kc"><b>'+an.densiteActuelle+'</b><span>Tiges/ha aujourd’hui</span></div>'+
   '</div>'+
+  /* Le chiffre qui decide s'il faut replanter ou renoncer. */
+  (an.densiteActuelle>0&&an.densiteActuelle<156
+    ? '<div class="enc att"><b>La densité est passée sous le seuil</b>'+
+      'Il reste '+an.densiteActuelle+' tiges par hectare sur les '+
+      densiteGrille(p)+' plantées. Le CNPF retient 156 à 204 tiges par hectare pour '+
+      'une peupleraie de production : en l’état, le peuplement ne produira pas ce '+
+      'qu’il devait produire. Remplacer les '+total+' manquants ramènerait la '+
+      'densité à '+densiteGrille(p)+'.</div>'
+    : '')+
   avert+
-  (an.mort?'<div class="enc"><b>Deux natures de travail</b>'+
+  /* Les recepages, et la raison pour laquelle ils ne se commandent PAS. */
+  (an.recepage
+    ? '<div class="enc"><b>'+an.recepage+' arbre'+(an.recepage>1?'s':'')+
+      ' à recéper — à ne pas commander</b>'+
+      (an.recepage>1?'Ces arbres sont vivants':'Cet arbre est vivant')+
+      ' mais mal conformé'+(an.recepage>1?'s':'')+' : fourchu'+(an.recepage>1?'s':'')+
+      ', couché'+(an.recepage>1?'s':'')+' ou cassé'+(an.recepage>1?'s':'')+'. '+
+      'On '+(an.recepage>1?'les':'l’')+' coupe au ras pour '+
+      (an.recepage>1?'qu’ils repartent':'qu’il reparte')+' d’un seul brin droit. '+
+      'C’est un travail de terrain, pas une fourniture : '+
+      (an.recepage>1?'ils ne figurent':'il ne figure')+' pas dans les '+total+
+      ' plants à commander.'+
+      '<span class="rr">'+plagesEtat(p,rel.etats,'c').map(function(x){
+        return 'Ligne '+(x.i+1)+' : <em>'+plagesTexte(x.plages)+'</em>';
+      }).join('<br>')+'</span></div>'
+    : '')+
+  /* Deux natures de travail — mais seulement s'il y en a bien deux.
+     « Les 0 emplacement vide est replantable tel quel » discreditait
+     tout le document d'une phrase. */
+  (an.mort?'<div class="enc"><b>'+
+    (an.absent?'Deux natures de travail':'Il faut abattre avant de replanter')+'</b>'+
     an.mort+' arbre'+(an.mort>1?'s sont morts':' est mort')+' sur pied : il faut '+
-    (an.mort>1?'les':'l’')+' abattre avant de replanter. Les '+an.absent+
-    ' emplacement'+(an.absent>1?'s vides sont replantables':' vide est replantable')+
-    ' tel'+(an.absent>1?'s':'')+' quel'+(an.absent>1?'s':'')+'.</div>':'')+
+    (an.mort>1?'les':'l’')+' abattre avant de replanter.'+
+    (an.absent
+      ? ' Les '+an.absent+' emplacement'+
+        (an.absent>1?'s vides sont replantables tels quels'
+                    :' vide est replantable tel quel')+'.'
+      : ' Aucun emplacement n’est vide : chacun des '+an.mort+
+        ' plants à fournir remplace un arbre à abattre.')+
+    '</div>':'')+
   '<div class="pgr">'+svgParcelle(p,rel.etats,
     {largeur:760,pasMax:16,texte:'#5C6B63',fond:'#FBFAF6'})+'</div>'+
-  legendeDoc()+
+  legendeDoc(rel.etats)+
   commentLireLePlan(p)+
   '<h2 style="font-size:13pt;margin:22px 0 10px">Où se trouvent-ils</h2>'+
   (lignes.length
@@ -8590,20 +8857,38 @@ function docElagage(p,rel,surPlace){
     .sort((a,b)=>String(a.d).localeCompare(String(b.d)));
   const dernier=prec[prec.length-1]||null;
   /* Les arbres a elaguer sont les vivants : on ne paie pas pour
-     elaguer un mort. */
+     elaguer un mort. Un arbre a receper non plus — on le coupe, on ne
+     l'elague pas. */
   const aFaire=an?(an.vivant+an.deperissant):nbArbresDe(p);
+  /* Avant trois saisons, il n'y a rien a elaguer : le tronc n'a pas le
+     diametre voulu. Annoncer malgre tout un nombre d'arbres ferait
+     chiffrer au bucheron un chantier qui n'a pas lieu d'etre. */
+  const tropTot=(age!=null&&age<3);
+  const surf=(an&&an.surfaceRelevee)?an.surfaceRelevee:surfaceGrille(p);
 
   const doc='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'+
   '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'+
   '<title>Élagage — '+esc(p.nom||'Parcelle')+'</title><style>'+
   STYLE_DOC+STYLE_PARC+
   '<\/style></head><body>'+
-  enteteDoc(p,'Chantier d’élagage',
-    rel?('État de la parcelle au '+fmtDate(new Date(rel.faitLe+'T12:00:00'))):'')+
+  enteteDoc(p,tropTot?'Élagage — pas encore':'Chantier d’élagage',
+    rel?('État de la parcelle au '+fmtDate(new Date(rel.faitLe+'T12:00:00'))):'',an)+
+  (tropTot
+    ? '<div class="enc att"><b>Rien à élaguer sur cette parcelle</b>'+
+      'La plantation a '+age+' saison'+(age>1?'s':'')+' de végétation. Le premier '+
+      'passage d’élagage se fait vers trois ans, quand le tronc atteint 7 à 12 cm '+
+      'de diamètre à 1,30 m. <strong>Ce document n’est pas une commande de '+
+      'chantier</strong> : il décrit l’état de la parcelle et les règles à '+
+      'appliquer le moment venu.</div>'
+    : '')+
   '<div class="kchiffres">'+
-    '<div class="kc"><b>'+aFaire+'</b><span>Arbres à élaguer</span></div>'+
+    (tropTot
+      ? '<div class="kc"><b>'+aFaire+'</b><span>Arbres vivants</span></div>'
+      : '<div class="kc"><b>'+aFaire+'</b><span>Arbres à élaguer</span></div>')+
     '<div class="kc"><b>'+p.nbLignes+'</b><span>Lignes</span></div>'+
-    '<div class="kc"><b>'+vir(surfaceGrille(p),2)+'</b><span>Hectares</span></div>'+
+    '<div class="kc"><b>'+vir(surf,2)+'</b><span>Hectares</span></div>'+
+    (an&&an.recepage?'<div class="kc"><b>'+an.recepage+'</b>'+
+      '<span>À recéper</span></div>':'')+
     (dernier?'<div class="kc"><b>'+(dernier.haut?dernier.haut+' m':'—')+
       '</b><span>Hauteur déjà faite</span></div>':'')+
   '</div>'+
@@ -8630,10 +8915,17 @@ function docElagage(p,rel,surPlace){
      :'Au-delà de 8 ans, les passages d’élagage sont normalement terminés.')+
     '</div>':'')+
   (rel?'<div class="pgr">'+svgParcelle(p,rel.etats,
-    {largeur:760,pasMax:16,texte:'#5C6B63',fond:'#FBFAF6'})+'</div>'+legendeDoc()+
-    '<div class="enc">Les ronds rouges et les ronds vides sont des arbres morts ou '+
-    'des emplacements vides : ils ne sont pas à élaguer. Le chantier porte sur '+
-    'les '+aFaire+' arbres vivants.</div>'
+    {largeur:760,pasMax:16,texte:'#5C6B63',fond:'#FBFAF6'})+'</div>'+legendeDoc(rel.etats)+
+    '<div class="enc">Les ronds rouges sont des arbres morts : ils ne sont pas à '+
+    'élaguer. '+(tropTot?'Les ':'Le chantier porte sur les ')+aFaire+
+    ' arbres vivants'+(tropTot?' ne sont pas encore élagables.':'.')+
+    (an&&an.recepage
+      ? ' Les '+an.recepage+' carrés violets sont des arbres à recéper : on les '+
+        'coupe au ras, on ne les élague pas. Leurs positions : '+
+        plagesEtat(p,rel.etats,'c').map(function(x){
+          return 'ligne '+(x.i+1)+', arbre'+(x.n>1?'s':'')+' '+plagesTexte(x.plages);
+        }).join(' ; ')+'.'
+      : '')+'</div>'
    :'')+
   (rel?commentLireLePlan(p):'')+
   '<div class="pied">Affût · '+fmtDate(new Date())+'</div>'+
@@ -8704,7 +8996,7 @@ function docEtatParcelle(p,rel,surPlace){
   STYLE_DOC+STYLE_PARC+
   '<\/style></head><body>'+
   enteteDoc(p,'État de la parcelle',
-    'Relevé pied à pied du '+fmtDate(new Date(rel.faitLe+'T12:00:00')))+
+    'Relevé pied à pied du '+fmtDate(new Date(rel.faitLe+'T12:00:00')),an)+
   '<div class="kchiffres">'+
     '<div class="kc"><b>'+an.vivant+'</b><span>Vivants</span></div>'+
     '<div class="kc"><b>'+an.deperissant+'</b><span>Dépérissants</span></div>'+
@@ -8717,7 +9009,7 @@ function docEtatParcelle(p,rel,surPlace){
     an.releves+' emplacements effectivement vus.</div>':'')+
   '<div class="pgr">'+svgParcelle(p,rel.etats,
     {largeur:760,pasMax:16,texte:'#5C6B63',fond:'#FBFAF6'})+'</div>'+
-  legendeDoc()+
+  legendeDoc(rel.etats)+
   commentLireLePlan(p)+
   verdict+evol+
   (pistes.length
@@ -9224,9 +9516,96 @@ let paId=null;
 function ouvrirParcelle(id){
   const p=parcelleDe(id); if(!p)return;
   paId=id;
+  /* Sans cela, l'emplacement choisi dans une parcelle resterait
+     selectionne en ouvrant la suivante, ou pointerait hors grille. */
+  paSel=null;
   renderParcelle();
   openSheet('#sh-parc');
 }
+/* ---------- corriger un emplacement depuis le plan ----------
+   Le releve guide sert a parcourir la parcelle une premiere fois.
+   Apres, ce qui change est ponctuel : un arbre note mort qui a reparti
+   du pied, un recepage fait dans l'hiver. Redemander 419 appuis pour en
+   corriger un seul serait absurde, et personne ne le ferait — donc la
+   carte finirait par mentir. */
+let paSel=null;        /* {i,j} de l'emplacement choisi, ou null */
+
+/* Du point touche a l'emplacement le plus proche. Sur 73 colonnes une
+   pastille fait quatre pixels : viser juste est impossible au doigt. On
+   accroche donc au plus proche au lieu d'exiger de la precision. */
+function placeTouchee(svg,ev){
+  if(!svg||!svg.dataset)return null;
+  const m=+svg.dataset.marge, pas=+svg.dataset.pas,
+        L=+svg.dataset.l, R=+svg.dataset.r;
+  if(!(pas>0)||!L||!R)return null;
+  const b=svg.getBoundingClientRect();
+  if(!b.width||!b.height)return null;
+  const vb=svg.viewBox&&svg.viewBox.baseVal;
+  if(!vb||!vb.width)return null;
+  const t=(ev.changedTouches&&ev.changedTouches[0])||
+          (ev.touches&&ev.touches[0])||ev;
+  const x=(t.clientX-b.left)*(vb.width /b.width);
+  const y=(t.clientY-b.top )*(vb.height/b.height);
+  const j=Math.round((x-m)/pas), i=Math.round((y-m)/pas);
+  if(i<0||i>=L||j<0||j>=R)return null;
+  return {i:i,j:j};
+}
+
+/* Ecrire un etat dans le dernier releve, et seulement celui-la :
+   corriger un releve ancien reecrirait l'histoire de la parcelle. */
+function poserEtatPlace(k){
+  const p=parcelleDe(paId); if(!p||!paSel)return;
+  const rel=dernierReleve(p.id); if(!rel)return;
+  if(!ETAT_PLACE[k])return;
+  const N=nbArbresDe(p), d=idxArbre(p,paSel.i,paSel.j);
+  if(d<0||d>=N)return;
+  /* La grille a pu s'agrandir depuis le releve. Completer avec des
+     « non relevé » plutot qu'ecrire au-dela de la fin de la chaine, ce
+     qui y glisserait des « undefined ». */
+  let s=String(rel.etats||'');
+  if(s.length<N)s+=new Array(N-s.length+1).join('?');
+  if(s.charAt(d)===k)return;
+  rel.etats=s.slice(0,d)+k+s.slice(d+1);
+  marquerRel(rel); save();
+  renderParcelle();
+}
+
+/* Passer a l'emplacement voisin sans revenir au plan. */
+function bougerPlace(pas){
+  const p=parcelleDe(paId); if(!p||!paSel)return;
+  const R=p.nbArbres||0, N=nbArbresDe(p);
+  const d=idxArbre(p,paSel.i,paSel.j)+pas;
+  if(d<0||d>=N)return;
+  paSel={i:Math.floor(d/R), j:d%R};
+  renderParcelle();
+}
+
+function renderPlace(){
+  const z=$('#pa-place'); if(!z)return;
+  const p=parcelleDe(paId), rel=p?dernierReleve(p.id):null;
+  if(!p||!rel||!paSel){ z.innerHTML=''; return }
+  const R=p.nbArbres||0, N=nbArbresDe(p);
+  const d=idxArbre(p,paSel.i,paSel.j);
+  const cur=String(rel.etats||'').charAt(d)||'?';
+  z.innerHTML='<div class="pp">'+
+    '<div class="pphaut">'+
+      '<button class="ppfl" id="pp-prec"'+(d<=0?' disabled':'')+'>&#8592;</button>'+
+      '<b>Ligne '+(paSel.i+1)+' &#183; Arbre '+(paSel.j+1)+
+        '<small>'+esc((ETAT_PLACE[cur]||ETAT_PLACE['?']).n)+
+        ' &#183; relevé du '+esc(fmtJourCourt(rel.faitLe))+'</small></b>'+
+      '<button class="ppfl" id="pp-suiv"'+(d>=N-1?' disabled':'')+'>&#8594;</button>'+
+      '<button class="ppx" id="pp-ferme">&#10005;</button>'+
+    '</div>'+
+    '<div class="ppetats">'+ETATS_PLACE.filter(e=>e.k!=='?').map(function(e){
+      return '<button class="ppe'+(e.k===cur?' on':'')+'" data-pe="'+e.k+'">'+
+        '<i class="'+(e.k==='c'?'carre':'')+'" style="background:'+e.c+'"></i>'+
+        esc(e.n)+'</button>';
+    }).join('')+'</div>'+
+    '<div class="ppnote">Les flèches passent à l’arbre voisin. '+
+      'La correction est enregistrée aussitôt, dans le relevé le plus récent.</div>'+
+  '</div>';
+}
+
 function renderParcelle(){
   const p=parcelleDe(paId); if(!p)return;
   const age=agePlantation(p), rel=dernierReleve(p.id);
@@ -9249,11 +9628,18 @@ function renderParcelle(){
       '<div class="kpi"><div class="n">'+densiteGrille(p)+'</div><div class="k">Tiges/ha</div></div>';
   }else{
     $('#pa-kpis').innerHTML=
-      '<div class="kpi acc"><div class="n">'+an.vivant+'</div><div class="k">Vivants</div></div>'+
+      '<div class="kpi acc"><div class="n">'+an.surPied+'</div><div class="k">Sur pied</div></div>'+
       '<div class="kpi red"><div class="n">'+an.manquant+'</div><div class="k">À remplacer</div></div>'+
       '<div class="kpi"><div class="n">'+vir(an.tauxManquant*100,1)+'%</div>'+
         '<div class="k">Taux de perte</div></div>'+
-      '<div class="kpi"><div class="n">'+an.deperissant+'</div><div class="k">Dépérissants</div></div>';
+      /* La densite qui compte n'est pas celle qu'on a plantee, c'est
+         celle qui reste : c'est elle qui decide de la recolte. */
+      '<div class="kpi"><div class="n">'+an.densiteActuelle+'</div>'+
+        '<div class="k">Tiges/ha</div></div>'+
+      (an.deperissant?'<div class="kpi"><div class="n">'+an.deperissant+'</div>'+
+        '<div class="k">Dépérissants</div></div>':'')+
+      (an.recepage?'<div class="kpi"><div class="n">'+an.recepage+'</div>'+
+        '<div class="k">À recéper</div></div>':'');
   }
 
   /* --- la fenetre de regarnis, qui decide du plan de replantation --- */
@@ -9285,15 +9671,18 @@ function renderParcelle(){
 
   /* --- la carte de la parcelle --- */
   $('#pa-carte').innerHTML=rel
-    ? '<div class="pgrille">'+svgParcelle(p,rel.etats,{largeur:640})+'</div>'
+    ? '<div class="pgrille">'+svgParcelle(p,rel.etats,{largeur:640,choisi:paSel})+'</div>'
     : '<div class="empty">Aucun relevé. Parcourez les lignes une première fois '+
       'pour voir l’état de la parcelle.</div>';
   $('#pa-legende').innerHTML=rel
     ? '<div class="plegende">'+ETATS_PLACE.filter(e=>e.k!=='?').map(e=>
-        '<span><i style="background:'+e.c+'"></i>'+esc(e.n)+'</span>').join('')+
+        '<span><i class="'+(e.k==='c'?'carre':'')+'" style="background:'+e.c+'"></i>'+
+        esc(e.n)+'</span>').join('')+
       '<span><i style="background:'+ETAT_PLACE['?'].c+';border:1px solid var(--trait2)"></i>'+
-      'Non relevé</span></div>'
+      'Non relevé</span></div>'+
+      (paSel?'':'<div class="ppnote">Touchez le plan pour corriger un arbre.</div>')
     : '';
+  renderPlace();
 
   /* --- le verdict et les pistes --- */
   $('#pa-diag').innerHTML=an?blocVerdict(p,an):'';
@@ -9424,8 +9813,14 @@ function svgParcelle(p,etats,opts){
   const pas=Math.max(4,Math.min(o.pasMax||18,dispo/Math.max(R,1)));
   const r=Math.max(1.6,pas*0.34);
   const larg=marge*2+pas*(R-1), haut=marge*2+pas*(L-1);
+  /* La geometrie voyage avec le dessin : sans elle, retrouver quel
+     emplacement a ete touche obligerait a redeviner la marge et le pas
+     dans le gestionnaire de clic, qui finiraient par diverger du
+     dessin a la premiere retouche. */
   let s='<svg viewBox="0 0 '+larg.toFixed(1)+' '+haut.toFixed(1)+'" '+
-        'xmlns="http://www.w3.org/2000/svg" role="img">';
+        'xmlns="http://www.w3.org/2000/svg" role="img" '+
+        'data-marge="'+marge+'" data-pas="'+pas.toFixed(4)+'" '+
+        'data-l="'+L+'" data-r="'+R+'">';
   if(o.fond)s+='<rect width="'+larg.toFixed(1)+'" height="'+haut.toFixed(1)+'" fill="'+o.fond+'"/>';
   /* numeros de ligne, tous les cinq */
   for(let i=0;i<L;i++){
@@ -9444,7 +9839,13 @@ function svgParcelle(p,etats,opts){
   }
   for(let i=0;i<L;i++)for(let j=0;j<R;j++){
     const e=ch[i*R+j]||'?';
-    const c=(ETAT_PLACE[e]||ETAT_PLACE['?']).c;
+    /* Un emplacement hors parcelle n'est pas une donnee : c'est du
+       terrain qui n'existe pas. Le dessiner le ferait lire comme un
+       arbre — et ici il y en a 238 contre 419 plantes, de quoi noyer
+       le plan. On n'en dessine donc aucun : le vide dit la forme de la
+       parcelle mieux qu'une pastille. */
+    if(e==='h')continue;
+    const c=(e==='?'&&o.inconnu)?o.inconnu:(ETAT_PLACE[e]||ETAT_PLACE['?']).c;
     const x=(marge+j*pas).toFixed(2), y=(marge+i*pas).toFixed(2);
     if(e==='?'){
       s+='<circle cx="'+x+'" cy="'+y+'" r="'+(r*0.55).toFixed(2)+'" fill="none" '+
@@ -9453,9 +9854,26 @@ function svgParcelle(p,etats,opts){
       /* un emplacement vide se dessine vide : un cercle ouvert */
       s+='<circle cx="'+x+'" cy="'+y+'" r="'+r.toFixed(2)+'" fill="none" '+
          'stroke="'+c+'" stroke-width="'+(r*0.42).toFixed(2)+'"/>';
+    }else if(e==='c'){
+      /* Un carre, et pas un rond d'une autre couleur : sur un plan
+         imprime en noir et blanc, ou pour un oeil qui confond les
+         teintes, la forme reste lisible quand la couleur ne l'est
+         plus. */
+      const k=r*0.92;
+      s+='<rect x="'+(marge+j*pas-k).toFixed(2)+'" y="'+(marge+i*pas-k).toFixed(2)+'" '+
+         'width="'+(k*2).toFixed(2)+'" height="'+(k*2).toFixed(2)+'" fill="'+c+'"/>';
     }else{
       s+='<circle cx="'+x+'" cy="'+y+'" r="'+r.toFixed(2)+'" fill="'+c+'"/>';
     }
+  }
+  /* L'emplacement choisi, cercle par-dessus tout le reste pour rester
+     visible quelle que soit la couleur de la pastille dessous. */
+  if(o.choisi&&o.choisi.i>=0&&o.choisi.i<L&&o.choisi.j>=0&&o.choisi.j<R){
+    const cx=(marge+o.choisi.j*pas).toFixed(2), cy=(marge+o.choisi.i*pas).toFixed(2);
+    s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*2.1).toFixed(2)+'" fill="none" '+
+       'stroke="#F4F7F5" stroke-width="'+Math.max(1,r*0.5).toFixed(2)+'"/>'+
+       '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r*2.1).toFixed(2)+'" fill="none" '+
+       'stroke="#111A16" stroke-width="'+Math.max(.4,r*0.18).toFixed(2)+'"/>';
   }
   /* fleche du nord, pour s'orienter sur le terrain */
   if(o.nord!==false&&p.cap!=null){
@@ -9721,13 +10139,29 @@ brancher('#pa-releves',function(e){
       'Enregistrer et sortir',function(){terminerReleve(false)});
   };
 })();
-brancher('.rvtrois',function(e){
+/* Delegue au corps entier, et non a chaque rangee : brancher() ne lie
+   que le PREMIER element trouve, de sorte qu'une seconde rangee de
+   boutons resterait muette sans que rien ne le signale. */
+brancher('.rvcorps',function(e){
   const b=e.target.closest('[data-e]'); if(!b||!RV)return;
   noterArbre(b.dataset.e);
 });
-brancher('.rvdeux',function(e){
-  const b=e.target.closest('[data-e]'); if(!b||!RV)return;
-  noterArbre(b.dataset.e);
+
+/* --- corriger un emplacement depuis le plan --- */
+brancher('#pa-carte',function(e){
+  const svg=e.target.closest('svg'); if(!svg)return;
+  const q=placeTouchee(svg,e); if(!q)return;
+  /* Retoucher le meme emplacement referme le panneau : sans cela, on
+     ne saurait plus comment s'en debarrasser. */
+  paSel=(paSel&&paSel.i===q.i&&paSel.j===q.j)?null:q;
+  renderParcelle();
+});
+brancher('#pa-place',function(e){
+  if(e.target.closest('#pp-ferme')){ paSel=null; renderParcelle(); return }
+  if(e.target.closest('#pp-prec')){ bougerPlace(-1); return }
+  if(e.target.closest('#pp-suiv')){ bougerPlace(1);  return }
+  const b=e.target.closest('[data-pe]');
+  if(b)poserEtatPlace(b.dataset.pe);
 });
 (function(){const b=$('#rv-suite'); if(b)b.onclick=function(){
   if(!RV)return; RV.suite=!RV.suite; renderReleve();
@@ -9975,7 +10409,7 @@ function ouvrirDocumentPlan(plan,surPlace){
     toast(efface+' \u00e9l\u00e9ment'+(efface>1?'s':'')+' de d\u00e9monstration supprim\u00e9'+(efface>1?'s':''))},900)}
   if(ST.aT!=='ALL'&&ST.aT!=='HORS'&&!ST.terr.some(t=>t.id===ST.aT))ST.aT='ALL';
   syncFilter();syncLayer();syncTopbar();syncActionBar();syncGpsPill();
-  stockageOk=await save();majBandeauStockage();renderAll();
+  stockageOk=await save();majRattachement();renderAll();
   if(ST.recs.length||ST.terr.length){if(ST.aT==='ALL')fitTout();else fitTerr()}
   else map.setView([46.6,2.4],6);
   suivre();
@@ -9993,6 +10427,7 @@ function ouvrirDocumentPlan(plan,surPlace){
       let n=0;
       try{ n=await retrouverEquipes() }catch(e){}
       if(n){
+        majRattachement();
         syncTopbar(); syncBoutons(); renderAll();
         setTimeout(function(){
           toast(n+' \u00e9quipe'+(n>1?'s':'')+' retrouv\u00e9e'+(n>1?'s':'')+
@@ -10003,6 +10438,13 @@ function ouvrirDocumentPlan(plan,surPlace){
                    (ST.recs.length>1?'s':'')) }catch(e){}
       }else if(c&&c.mail){
         setTimeout(function(){toast('Identit\u00e9 confirm\u00e9e \u00b7 '+c.mail)},900);
+        /* Identifie, mais membre d'aucune equipe : le dire, au lieu de
+           laisser devant une application vide. */
+        majRattachement();
+        if(sansEquipe)setTimeout(function(){
+          toast('Aucune \u00e9quipe pour '+c.mail+' \u00b7 rejoignez-en une avec son code')},1800);
+      }else{
+        majRattachement();
       }
     });
   }
@@ -10012,10 +10454,13 @@ function ouvrirDocumentPlan(plan,surPlace){
     setTimeout(function(){
       sbInit().then(async function(){
         const c=await monCompte();
-        if(!c||c.anonyme)return;          /* compte neuf : rien a retrouver */
+        /* Un compte neuf n'a rien a retrouver — mais l'appareil reste
+           vide, et c'est cela qu'il faut dire. */
+        if(!c||c.anonyme){ majRattachement(); return }
         let n=0;
         try{ n=await retrouverEquipes() }catch(e){}
-        if(!n)return;
+        if(!n){ majRattachement(); return }
+        majRattachement();
         syncTopbar(); syncBoutons(); renderAll();
         toast(n+' \u00e9quipe'+(n>1?'s':'')+' retrouv\u00e9e'+(n>1?'s':'')+'\u2026');
         try{ await synchroniser(true); renderAll(); fitTout() }catch(e){}
