@@ -3179,7 +3179,11 @@ function updateReticle(){
 function drawProvisional(){
   dessin().clearLayers();
   if(!PLACE||!PLACE.pts||!PLACE.pts.length)return;
-  const col=PLACE.what==='terr'?'#7FB8D6':ETYPES[PLACE.what].col;
+  /* Deux traces ne sont pas des elements du referentiel : les limites
+     d'un territoire, et le contour d'une parcelle. ETYPES ne les
+     connait pas — les interroger planterait le trace. */
+  const col=(PLACE.what==='terr'||PLACE.what==='parccont')
+    ? '#7FB8D6' : ETYPES[PLACE.what].col;
   PLACE.pts.forEach(p=>L.circleMarker(p,{radius:5,color:'#fff',weight:2,fillColor:col,fillOpacity:1}).addTo(layDraw));
   if(PLACE.pts.length>1){
     if(PLACE.geo==='poly'&&PLACE.pts.length>2)
@@ -3294,7 +3298,9 @@ function syncShapeBar(){
   $('#act-main-t').textContent=n?'Terminer ('+n+')':'Terminer';
   $('#act-main').disabled=n<min;
   $('#act-cancel').textContent=n?'Retirer':'Annuler';
-  const quoi=PLACE.what==='terr'?'les limites du territoire':ETYPES[PLACE.what].n.toLowerCase();
+  const quoi=PLACE.what==='terr'?'les limites du territoire'
+    :PLACE.what==='parccont'?'le contour de la parcelle'
+    :ETYPES[PLACE.what].n.toLowerCase();
   showHint('Trac\u00e9 : '+quoi,
     n<min?('Amenez le r\u00e9ticule sur le point voulu, puis Poser ici. Encore '+(min-n)+
            ' point'+(min-n>1?'s':'')+'.')
@@ -3818,6 +3824,103 @@ function analyserReleve(p,etats,opts){
 }
 
 /* ---------------------------------------------------------------
+   Lire un ecart sans le sur-lire.
+
+   Sur une ligne de 47 arbres, un taux de mortalite ne tombe jamais
+   pile sur la moyenne de la parcelle : il bouge tout seul. Avant
+   d'annoncer qu'une ligne est « touchee », il faut savoir de combien
+   elle bouge pour rien.
+
+   L'ecart-type d'une proportion valant racine de p(1-p)/n, on compte
+   en nombre d'ecarts-types : au-dela de deux, l'ecart depasse ce que
+   le tirage seul produirait. Ce n'est pas un test publiable — les
+   lignes ne sont pas independantes, un sol se moque des numeros — mais
+   c'est la difference entre attirer l'oeil et inventer une zone.
+--------------------------------------------------------------- */
+function ecartsType(m,n,p){
+  if(!n||p<=0||p>=1)return 0;
+  const et=Math.sqrt(p*(1-p)/n);
+  return et?((m/n)-p)/et:0;
+}
+/* Le profil le long de la ligne. Soixante-douze colonnes ne se lisent
+   pas une par une : on les groupe en tranches d'egale largeur, et
+   c'est la tranche qui parle — « la mortalite monte vers la fin des
+   lignes » se voit sur six chiffres, pas sur soixante-douze. */
+function tranchesRangs(p,etats,nb){
+  const L=p.nbLignes||0, R=p.nbArbres||0, ch=String(etats||'');
+  if(!L||!R)return [];
+  const n=Math.max(1,Math.min(nb||6,R));
+  const out=[];
+  for(let b=0;b<n;b++){
+    const j0=Math.floor(b*R/n), j1=Math.floor((b+1)*R/n)-1;
+    let m=0,c=0;
+    for(let i=0;i<L;i++)for(let j=j0;j<=j1;j++){
+      const e=ch[i*R+j]||'?';
+      if(HORS_COMPTE.indexOf(e)>-1)continue;
+      c++; if(e==='m')m++;
+    }
+    out.push({de:j0+1, a:j1+1, mort:m, releve:c, taux:c?m/c:0});
+  }
+  return out.filter(x=>x.releve>0);
+}
+/* Le croisement lignes x tranches : c'est lui qui designe un COIN de
+   parcelle, ce qu'aucun profil pris seul ne sait faire. Une mortalite
+   qui monte en fin de ligne ET en bas de parcelle peut n'etre qu'une
+   zone basse a l'angle des deux — le croisement la montre, les deux
+   profils separes la cachent. */
+function croiseLigneTranche(p,etats,nbL,nbR){
+  const L=p.nbLignes||0, R=p.nbArbres||0, ch=String(etats||'');
+  if(!L||!R)return null;
+  const gl=Math.max(1,Math.min(nbL||3,L)), gr=Math.max(1,Math.min(nbR||4,R));
+  const lignes=[], cases=[];
+  for(let a=0;a<gl;a++){
+    const i0=Math.floor(a*L/gl), i1=Math.floor((a+1)*L/gl)-1;
+    lignes.push({de:i0+1,a:i1+1});
+    const row=[];
+    for(let b=0;b<gr;b++){
+      const j0=Math.floor(b*R/gr), j1=Math.floor((b+1)*R/gr)-1;
+      let m=0,c=0;
+      for(let i=i0;i<=i1;i++)for(let j=j0;j<=j1;j++){
+        const e=ch[i*R+j]||'?';
+        if(HORS_COMPTE.indexOf(e)>-1)continue;
+        c++; if(e==='m')m++;
+      }
+      row.push({de:j0+1,a:j1+1,mort:m,releve:c,taux:c?m/c:0});
+    }
+    cases.push(row);
+  }
+  /* La case la plus touchee, pourvu qu'elle porte assez d'arbres pour
+     dire quelque chose : une case de trois arbres tous morts fait
+     100 % et ne prouve rien. */
+  let pire=null;
+  cases.forEach(function(row,a){ row.forEach(function(c,b){
+    if(c.releve<10)return;
+    if(!pire||c.taux>pire.c.taux)pire={a:a,b:b,c:c};
+  })});
+  return {lignes:lignes, cases:cases, pire:pire, nbL:gl, nbR:gr};
+}
+/* Comparer DEUX proportions entre elles, et non chacune a la moyenne.
+   Soustraire deux ecarts-types ne donne pas un ecart-type : il faut
+   repartir des effectifs. On met les deux groupes en commun pour
+   estimer le taux, puis on mesure l'ecart a l'aune de ce que ce taux
+   commun produirait sur des groupes de ces tailles-la. */
+function ecartEntreDeux(m1,n1,m2,n2){
+  if(!n1||!n2)return 0;
+  const pc=(m1+m2)/(n1+n2);
+  if(pc<=0||pc>=1)return 0;
+  const et=Math.sqrt(pc*(1-pc)*(1/n1+1/n2));
+  return et?((m2/n2)-(m1/n1))/et:0;
+}
+/* Le gradient le long des lignes : premiere tranche contre derniere. */
+function gradient(tr){
+  if(!tr||tr.length<2)return null;
+  const a=tr[0], b=tr[tr.length-1];
+  if(a.releve<10||b.releve<10)return null;
+  return {debut:a, fin:b, ecart:b.taux-a.taux,
+          z:ecartEntreDeux(a.mort,a.releve,b.mort,b.releve)};
+}
+
+/* ---------------------------------------------------------------
    Cultivars de peuplier.
 
    Le cultivar n'est pas un detail d'etiquette : il commande la
@@ -4213,6 +4316,7 @@ $('#act-main').onclick=async function(){
   const min=PLACE.geo==='poly'?3:2;
   if(PLACE.pts.length<min){toast('Il faut au moins '+min+' points');return}
   if(PLACE.what==='terr')finishTerr(PLACE.pts.slice());
+  else if(PLACE.what==='parccont')finirContourParcelle(PLACE.pts.slice());
   else addElement(PLACE.what,PLACE.pts.slice());
   stopPlace();
 };
@@ -7429,6 +7533,10 @@ function parcVers(p){
     ori_lat:p.oriLat, ori_lng:p.oriLng, cap:p.cap,
     ecart_ligne:p.ecartLigne, ecart_arbre:p.ecartArbre,
     nb_lignes:p.nbLignes, nb_arbres:p.nbArbres,
+    /* Le vrai contour du terrain, releve sur la vue aerienne. La
+       grille est un rectangle, la parcelle presque jamais : sans lui,
+       on dessine sur la photo une forme qui n'existe pas. */
+    contour:p.contour||[],
     travaux:p.travaux||[], note:p.note||null,
     auteur_nom:p.auteur_nom||(ST.equipe&&ST.equipe.pseudo)||null,
     supprime_le:p.del?new Date().toISOString():null};
@@ -7441,6 +7549,9 @@ function parcDepuis(l,ex){
   p.cap=l.cap==null?0:Number(l.cap);
   p.ecartLigne=Number(l.ecart_ligne)||0; p.ecartArbre=Number(l.ecart_arbre)||0;
   p.nbLignes=l.nb_lignes||0; p.nbArbres=l.nb_arbres||0;
+  /* Un serveur qui ne connait pas encore la colonne renvoie undefined :
+     on garde alors le contour local plutot que de l'effacer. */
+  p.contour=Array.isArray(l.contour)?l.contour:(p.contour||[]);
   p.travaux=l.travaux||[]; p.note=l.note||'';
   p.auteur_nom=l.auteur_nom||''; p.equipes=l.equipes||[];
   p.del=!!l.supprime_le; p.maj=0; return p;
@@ -8683,7 +8794,49 @@ const STYLE_PARC=
   '.coord th{text-align:left;font-size:8pt;text-transform:uppercase;'+
     'letter-spacing:.6px;color:#6E7F75;font-weight:700;padding:0 8px 4px 0}'+
   '.coord td{padding:3px 8px 3px 0;border-top:1px solid #DED9C9}'+
-  '.coord .mn{font-family:ui-monospace,Menlo,monospace;white-space:nowrap}';
+  '.coord .mn{font-family:ui-monospace,Menlo,monospace;white-space:nowrap}'+
+  /* Les coordonnees SONT le lien : a l'ecran on les touche, imprimees
+     on les recopie. Encre noire et simple souligne pointille, pour
+     qu'un lien bleu souligne ne deteigne pas sur une feuille papier. */
+  '.coord a{color:inherit;text-decoration:underline;'+
+    'text-decoration-style:dotted;text-underline-offset:2px}'+
+  '.ouvrir{display:inline-block;margin:4px 0 0;font-size:9.5pt;'+
+    'font-weight:700;color:#2F4F43}'+
+  /* Un tableau de taux : le chiffre se lit, la barre se compare d'un
+     coup d'oeil. Une seule teinte, car c'est une grandeur et non des
+     categories, et le nombre reste ecrit a cote — rien ne repose sur
+     la seule couleur. */
+  '.txtab{width:100%;border-collapse:collapse;margin:10px 0 4px;font-size:9.5pt}'+
+  '.txtab th{text-align:left;font-size:8pt;text-transform:uppercase;'+
+    'letter-spacing:.6px;color:#6E7F75;font-weight:700;padding:0 8px 4px 0}'+
+  '.txtab td{padding:3px 8px 3px 0;border-top:1px solid #E4E0D3}'+
+  '.txtab td.n{text-align:right;font-variant-numeric:tabular-nums;'+
+    'white-space:nowrap}'+
+  '.txtab td.bar{width:34%;padding-right:0}'+
+  '.txtab th.n{text-align:right}'+
+  '.txtab td.bar i{display:block;height:9px;border-radius:2px;'+
+    'background:#C9846F;min-width:1px}'+
+  /* Un ecart qui sort du lot est signale DEUX fois : par le fond et
+     par le point d'exclamation en fin de ligne. Imprime en noir et
+     blanc, ou lu par un daltonien, il reste reperable.
+     Et le sens compte : une ligne qui meurt PLUS que la moyenne
+     s'alarme en rouge, une ligne qui meurt MOINS se signale en vert.
+     Les peindre pareil ferait lire une bonne nouvelle comme un
+     sinistre — c'etait le cas des lignes 7 et 8 de La Serve, les
+     mieux tenues de la parcelle, surlignees comme les pires. */
+  '.txtab tr.fort td{background:#FBF0EC;font-weight:700}'+
+  '.txtab tr.fort td.bar i{background:#A5402C}'+
+  '.txtab tr.bon td{background:#EEF5EF;font-weight:700}'+
+  '.txtab tr.bon td.bar i{background:#2F7A4F}'+
+  '.txcr{width:100%;border-collapse:collapse;margin:10px 0 4px;font-size:9pt}'+
+  '.txcr th{text-align:center;font-size:8pt;text-transform:uppercase;'+
+    'letter-spacing:.5px;color:#6E7F75;font-weight:700;padding:0 4px 4px}'+
+  '.txcr th:first-child{text-align:left}'+
+  '.txcr td{padding:5px 4px;border-top:1px solid #E4E0D3;text-align:center;'+
+    'font-variant-numeric:tabular-nums}'+
+  '.txcr td:first-child{text-align:left;font-weight:700}'+
+  '.txcr td small{display:block;font-size:7.5pt;color:#6E7F75;font-weight:400}'+
+  '.txcr td.pire{background:#FBF0EC;font-weight:700;border-radius:4px}';
 
 /* Les emplacements a remplacer, regroupes par ligne et condenses en
    plages : « ligne 7, arbres 12 a 15 » se retrouve sur le terrain,
@@ -8923,21 +9076,27 @@ function dessinerCalque(refaireLesPoignees){
   SIT.cal=L.layerGroup().addTo(map);
   const A=posArbre(q,0,0), B=posArbre(q,0,R1-1),
         C=posArbre(q,L1-1,0), D=posArbre(q,L1-1,R1-1);
-  L.polygon([A,B,D,C],{color:'#7FB8D6',weight:2,fillColor:'#7FB8D6',fillOpacity:.10,
+  /* Le cadre de la grille. Une fois les arbres visibles, il ne porte
+     plus de remplissage : un aplat sur la photo aerienne masque
+     justement les arbres qu'on vise. */
+  let zc=ZOOM_ARBRES; try{ zc=map.getZoom() }catch(e){}
+  L.polygon([A,B,D,C],{color:'#7FB8D6',weight:zc>=ZOOM_ARBRES?1.5:2,
+    fillColor:'#7FB8D6',fillOpacity:zc>=ZOOM_ARBRES?0:.10,
     interactive:false}).addTo(SIT.cal);
-  /* Une ligne par rangee : de loin, c'est elle qui dit si
-     l'orientation est juste, en courant le long des rangees. */
-  for(let i=0;i<L1;i++){
-    L.polyline([posArbre(q,i,0),posArbre(q,i,R1-1)],
-      {color:'#CFE6F3',weight:1.2,opacity:.85,interactive:false}).addTo(SIT.cal);
-  }
-  /* Et les arbres eux-memes, des qu'on est assez pres pour les
+  /* Les arbres eux-memes, des qu'on est assez pres pour les
      distinguer : c'est en les faisant tomber sur les arbres de la
      photo aerienne qu'on pose la grille juste. On les REPLACE au lieu
      de les recreer — pendant un glisser, la grille est redessinee a
      chaque mouvement du doigt, et recreer quatre cents cercles par
      image saccade sur un telephone. */
   let z=ZOOM_ARBRES; try{ z=map.getZoom() }catch(e){}
+  /* Une ligne par rangee ne sert que de substitut LOINTAIN aux
+     arbres : des qu'on voit les points, les rayures ne font que
+     barrer la photo aerienne par-dessus les arbres a viser. */
+  if(z<ZOOM_ARBRES)for(let i=0;i<L1;i++){
+    L.polyline([posArbre(q,i,0),posArbre(q,i,R1-1)],
+      {color:'#CFE6F3',weight:1.2,opacity:.85,interactive:false}).addTo(SIT.cal);
+  }
   const rel=dernierReleve(SIT.id);
   const emp=(z>=ZOOM_ARBRES)?emplacementsArbres(q,rel?rel.etats:''):[];
   if(!SIT.arb)SIT.arb=L.layerGroup().addTo(map);
@@ -9044,14 +9203,29 @@ function renderParcs(){
     let vue=null; try{ vue=map.getBounds() }catch(e){}
     (ST.parcelles||[]).forEach(function(p){
       if(p.del)return;
-      const c=coinsParcelle(p); if(!c)return;
-      const bb=L.latLngBounds([c.A,c.B,c.C,c.D]);
-      L.polygon([c.A,c.B,c.D,c.C],{color:'#7FB8D6',weight:2,fillColor:'#7FB8D6',
-        fillOpacity:.14}).addTo(layParcs);
-      L.marker(c.centre,{interactive:false,icon:L.divIcon({className:'etiqparc',
+      const c=coinsParcelle(p);
+      /* Le vrai contour l'emporte sur le rectangle de la grille. Une
+         parcelle n'est presque jamais rectangulaire — celle de La
+         Serve est un quadrilatere allonge — et dessiner le rectangle
+         sur la photo aerienne montre une limite qui n'existe pas.
+         Un contour seul se dessine meme sans grille posee. */
+      const ct=(p.contour&&p.contour.length>2)?p.contour:null;
+      if(!c&&!ct)return;
+      const forme=ct||[c.A,c.B,c.D,c.C];
+      const bb=L.latLngBounds(forme);
+      /* Un aplat masque les arbres de la photo : des qu'on les
+         dessine, le contour n'est plus qu'un trait. */
+      L.polygon(forme,{color:'#7FB8D6',weight:2,fillColor:'#7FB8D6',
+        fillOpacity:z>=ZOOM_ARBRES?0:.14,interactive:false}).addTo(layParcs);
+      /* On calcule le centre plutot que de le demander aux bornes :
+         une moyenne de sommets ne depend d'aucune version de la
+         bibliotheque de carte. */
+      const moy=k=>forme.reduce((s,x)=>s+Number(x[k]),0)/forme.length;
+      const etiq=c?c.centre:[moy(0),moy(1)];
+      L.marker(etiq,{interactive:false,icon:L.divIcon({className:'etiqparc',
         iconSize:[0,0],html:'<span>'+esc(p.nom||'Parcelle')+'</span>'})})
         .addTo(layParcs);
-      if(z<ZOOM_ARBRES)return;
+      if(z<ZOOM_ARBRES||!c)return;
       /* Hors ecran, quelques centaines de ronds coutent sans rien
          montrer. Si la carte ne sait pas repondre, on dessine. */
       let dedans=true;
@@ -9064,6 +9238,36 @@ function renderParcs(){
       });
     });
   }catch(e){}
+}
+/* Relever le vrai contour du terrain sur la vue aerienne. On reutilise
+   le trace de polygone des territoires : meme geste, meme barre. */
+let contourDe=null;
+function tracerContourParcelle(id){
+  const p=parcelleDe(id); if(!p)return;
+  contourDe=id;
+  closeAll();
+  startShape('parccont','poly');
+  /* Se mettre devant la parcelle : on ne trace pas un contour a
+     l'aveugle. Si elle n'est pas encore situee, on reste ou l'on est
+     plutot que de sauter n'importe ou. */
+  try{
+    const c=coinsParcelle(p);
+    if(c)map.fitBounds(L.latLngBounds([c.A,c.B,c.C,c.D]).pad(0.35));
+  }catch(e){}
+}
+function finirContourParcelle(pts){
+  const p=contourDe?parcelleDe(contourDe):null;
+  contourDe=null;
+  if(!p||!pts||pts.length<3)return;
+  p.contour=pts.map(x=>[Number(x[0]),Number(x[1])]);
+  marquerParc(p); save(); renderAll();
+  toast('Contour enregistré · '+vir(areaHa(p.contour),2)+' ha');
+  setTimeout(function(){ouvrirParcelle(p.id)},200);
+}
+function effacerContourParcelle(id){
+  const p=parcelleDe(id); if(!p||!p.contour||!p.contour.length)return;
+  p.contour=[]; marquerParc(p); save(); renderParcelle(); renderAll();
+  toast('Contour effacé');
 }
 /* Et aller la voir : le cadrage, puis le dessin — dans cet ordre, car
    le cadrage change le zoom et donc la taille des arbres. */
@@ -9098,6 +9302,20 @@ function coinsParcelle(p){
    degres-minutes-secondes se lisent sur une carte papier. On donne les
    deux, et les quatre coins, parce qu'un livreur de plants cherche une
    entree, pas un centre de gravite. */
+/* Un lien Google Maps vers un point, au format documente par Google
+   (Maps URLs API) : il ouvre l'application sur un telephone et le site
+   sur un ordinateur. Attention au separateur — l'adresse veut un POINT
+   decimal, alors que l'affichage francais porte une virgule. vir() ne
+   sert donc qu'au texte visible, jamais a l'URL. Sans coordonnees
+   valides, on rend le texte nu : pas de lien vers le golfe de Guinee. */
+function lienMaps(pt,texte,classe){
+  if(!pt||pt[0]==null||!isFinite(pt[0])||pt[1]==null||!isFinite(pt[1]))
+    return esc(texte||'');
+  const q=Number(pt[0]).toFixed(6)+','+Number(pt[1]).toFixed(6);
+  return '<a'+(classe?' class="'+classe+'"':'')+
+    ' href="https://www.google.com/maps/search/?api=1&amp;query='+q+'"'+
+    ' target="_blank" rel="noopener">'+esc(texte||q)+'</a>';
+}
 function ouEstLaParcelle(p){
   const c=coinsParcelle(p);
   if(!c)return '';
@@ -9107,17 +9325,196 @@ function ouEstLaParcelle(p){
             ['Coin B — ligne 1, arbre '+p.nbArbres,c.B],
             ['Coin C — ligne '+p.nbLignes+', arbre 1',c.C],
             ['Coin D — ligne '+p.nbLignes+', arbre '+p.nbArbres,c.D]];
+  /* Les degres-minutes-secondes etaient du poids mort : c'est une
+     notation de carte papier, que personne ne recopie dans un
+     telephone. Un lien se touche, et imprime il reste des chiffres
+     recopiables — le lien porte les coordonnees elles-memes. */
   return '<div class="enc"><b>Où se trouve la parcelle</b>'+
-    '<table class="coord"><tr><th></th><th>Degrés décimaux</th>'+
-    '<th>Degrés, minutes, secondes</th></tr>'+
+    '<table class="coord"><tr><th></th><th>Coordonnées — '+
+    'à toucher pour ouvrir dans Google Maps</th></tr>'+
     li.map(function(x){
-      return '<tr><td>'+esc(x[0])+'</td><td class="mn">'+dd(x[1])+'</td>'+
-        '<td class="mn">'+dmsCourt(x[1][0],'N','S')+' '+
-        dmsCourt(x[1][1],'E','O')+'</td></tr>';
+      return '<tr><td>'+esc(x[0])+'</td><td class="mn">'+
+        lienMaps(x[1],dd(x[1]))+'</td></tr>';
     }).join('')+'</table>'+
     '<span class="rr">Les lignes courent au cap '+Math.round(p.cap)+'°, '+
     vir(Math.abs(p.ecartArbre),1)+' m entre deux arbres et '+
-    vir(Math.abs(p.ecartLigne),1)+' m entre deux lignes.</span></div>';
+    vir(Math.abs(p.ecartLigne),1)+' m entre deux lignes.</span><br>'+
+    lienMaps(c.centre,'→ Ouvrir la parcelle dans Google Maps','ouvrir')+
+    '</div>';
+}
+/* Un tableau de taux de mortalite, une ligne par groupe. La barre
+   donne la comparaison d'un coup d'oeil, le chiffre donne la valeur,
+   et la colonne d'ecart dit s'il faut y croire. */
+function tableauTaux(lignes,tauxRef,libelle){
+  if(!lignes||!lignes.length)return '';
+  const max=Math.max.apply(null,lignes.map(l=>l.taux).concat([tauxRef,0.01]));
+  return '<table class="txtab"><tr><th>'+esc(libelle)+'</th><th class="n">Morts</th>'+
+    '<th class="n">Relevés</th><th class="n">Taux</th><th></th>'+
+    '<th class="n">Écart</th></tr>'+
+    lignes.map(function(l){
+      const z=ecartsType(l.mort,l.releve,tauxRef);
+      /* Au-dessus de la moyenne : alarme. En dessous : bonne
+         nouvelle. Le meme surlignage pour les deux ferait lire la
+         ligne la mieux tenue comme la plus sinistree. */
+      const sort=Math.abs(z)>=2&&l.releve>=10;
+      const cl=sort?(z>0?' class="fort"':' class="bon"'):'';
+      return '<tr'+cl+'><td>'+esc(l.nom)+'</td>'+
+        '<td class="n">'+l.mort+'</td><td class="n">'+l.releve+'</td>'+
+        '<td class="n">'+vir(l.taux*100,1)+' %</td>'+
+        '<td class="bar"><i style="width:'+
+          Math.max(1,Math.round(l.taux/max*100))+'%"></i></td>'+
+        '<td class="n">'+(z>0?'+':'')+vir(z,1)+(sort?' !':'')+'</td></tr>';
+    }).join('')+'</table>';
+}
+/* Les chiffres qui comptent pour un forestier : ce qui tient debout,
+   a quelle densite, et ce qu'il reste a faire. Le reste est du
+   commentaire. */
+function blocChiffres(p,an){
+  const maille=Math.abs(p.ecartArbre||0)*Math.abs(p.ecartLigne||0);
+  const dep=maille?Math.round(10000/maille):0;      /* densite a la plantation */
+  const chute=dep?(dep-an.densiteActuelle)/dep:0;
+  const pct=n=>an.releves?vir(n/an.releves*100,1)+' %':'—';
+  const li=[
+    ['Vivants',            an.vivant,      pct(an.vivant)],
+    ['dont à recéper',     an.recepage,    pct(an.recepage)],
+    ['Dépérissants',       an.deperissant, pct(an.deperissant)],
+    ['Morts sur pied',     an.mort,        pct(an.mort)],
+    ['Emplacements vides', an.absent,      pct(an.absent)]
+  ].filter(x=>x[1]>0||x[0]==='Vivants'||x[0]==='Morts sur pied');
+  return '<h2 style="font-size:13pt;margin:22px 0 10px">Les chiffres</h2>'+
+    '<table class="txtab"><tr><th>Sur les '+an.releves+' emplacements relevés</th>'+
+    '<th class="n">Nombre</th><th class="n">Part</th></tr>'+
+    li.map(x=>'<tr><td>'+esc(x[0])+'</td><td class="n">'+x[1]+
+      '</td><td class="n">'+x[2]+'</td></tr>').join('')+
+    '<tr><td><b>Tiges sur pied</b></td><td class="n"><b>'+an.surPied+
+      '</b></td><td class="n"><b>'+pct(an.surPied)+'</b></td></tr>'+
+    '<tr><td><b>À remplacer</b> (morts + vides)</td><td class="n"><b>'+
+      an.manquant+'</b></td><td class="n"><b>'+pct(an.manquant)+'</b></td></tr>'+
+    '</table>'+
+    /* La densite est le chiffre qui decide d'un avenir de peupleraie :
+       en dessous d'un certain seuil, la parcelle ne fera jamais un
+       peuplement, quel que soit le nombre d'arbres encore vivants. */
+    '<table class="txtab"><tr><th>Le peuplement</th><th class="n"></th></tr>'+
+    '<tr><td>Surface réellement plantable</td><td class="n">'+
+      vir(an.surfaceRelevee,2)+' ha</td></tr>'+
+    '<tr><td>Densité à la plantation ('+vir(Math.abs(p.ecartLigne),1)+' × '+
+      vir(Math.abs(p.ecartArbre),1)+' m)</td><td class="n">'+dep+' tiges/ha</td></tr>'+
+    '<tr><td><b>Densité aujourd’hui</b></td><td class="n"><b>'+
+      an.densiteActuelle+' tiges/ha</b></td></tr>'+
+    (chute>0?'<tr><td>Chute de densité</td><td class="n">− '+
+      vir(chute*100,0)+' %</td></tr>':'')+
+    '</table>'+
+    '<span class="rr">La surface est celle des emplacements '+
+    'réellement dans la parcelle — les '+an.hors+' emplacements jamais '+
+    'plantés en sont exclus. Diviser par le rectangle de la grille '+
+    'donnerait une densité beaucoup trop basse, et ferait passer pour '+
+    'sinistrée une parcelle qui ne l’est pas.</span>';
+}
+/* Ou la mortalite se concentre, en chiffres. Trois lectures : le long
+   des lignes, en travers, et le croisement des deux — qui seul sait
+   designer un coin de parcelle. */
+function blocConcentration(p,rel,an){
+  if(!an||an.mort<5)return '';
+  const tm=an.tauxMort;
+  const parL=(an.parLigne||[]).filter(l=>l.releve>0)
+    .map(l=>({nom:'Ligne '+(l.i+1),mort:l.mort,releve:l.releve,taux:l.taux}));
+  const tr=tranchesRangs(p,rel.etats,6);
+  const parT=tr.map(t=>({nom:'Arbres '+t.de+' à '+t.a,
+    mort:t.mort,releve:t.releve,taux:t.taux}));
+  const gr=gradient(tr);
+  const cr=croiseLigneTranche(p,rel.etats,3,4);
+
+  let h='<h2 style="font-size:13pt;margin:22px 0 10px">Où la mortalité se concentre</h2>'+
+    '<div class="enc">La mortalité moyenne est de '+vir(tm*100,1)+' %. '+
+    'La colonne <strong>Écart</strong> compte en écarts-types : elle dit de combien '+
+    'un groupe s’éloigne de cette moyenne, rapporté à ce que le seul hasard du '+
+    'tirage produirait sur un groupe de cette taille. Au-delà de 2, marqué '+
+    '« ! », l’écart ne s’explique plus par le hasard d’échantillonnage. '+
+    'Ce n’est pas une preuve : les lignes voisines se ressemblent, un sol '+
+    'ignore les numéros. C’est ce qui mérite d’aller voir.</div>';
+
+  if(parL.length>1){
+    h+='<h3 style="font-size:11pt;margin:16px 0 4px">D’une ligne à l’autre</h3>'+
+      tableauTaux(parL,tm,'Ligne')+
+      '<span class="rr">Une mortalité qui suit les lignes désigne un lot de '+
+      'plants ou un passage d’engin : les lignes ont été plantées l’une après '+
+      'l’autre, souvent avec des plants pris dans le même paquet.</span>';
+  }
+  if(parT.length>1){
+    h+='<h3 style="font-size:11pt;margin:16px 0 4px">Le long des lignes</h3>'+
+      tableauTaux(parT,tm,'Tranche')+
+      (gr&&Math.abs(gr.ecart)>=0.08
+        ? '<span class="rr">La mortalité passe de '+vir(gr.debut.taux*100,1)+
+          ' % au début des lignes à '+vir(gr.fin.taux*100,1)+' % à la fin'+
+          (Math.abs(gr.z)>=2
+            ? ' : l’écart dépasse ce que le hasard produirait. Un gradient '+
+              'régulier le long des lignes suit le terrain — une pente, une '+
+              'nappe, une épaisseur de terre — plutôt qu’un accident.'
+            : ', mais sur ces effectifs l’écart reste dans ce que le hasard '+
+              'produit : il y a une pente, elle n’est pas établie. Un second '+
+              'relevé trancherait.')+'</span>'
+        : '<span class="rr">Aucun gradient net le long des lignes : la '+
+          'mortalité ne monte pas d’un bout à l’autre.</span>');
+  }
+  if(cr&&cr.pire&&cr.pire.c.taux>=Math.max(0.2,tm*1.3)){
+    h+='<h3 style="font-size:11pt;margin:16px 0 4px">Le croisement des deux</h3>'+
+      '<table class="txcr"><tr><th></th>'+
+      cr.cases[0].map(c=>'<th>Arbres '+c.de+'–'+c.a+'</th>').join('')+'</tr>'+
+      cr.cases.map(function(row,a){
+        const lg=cr.lignes[a];
+        return '<tr><td>Lignes '+lg.de+'–'+lg.a+'</td>'+row.map(function(c,b){
+          const pire=(a===cr.pire.a&&b===cr.pire.b);
+          return '<td'+(pire?' class="pire"':'')+'>'+
+            (c.releve?vir(c.taux*100,0)+' %':'—')+
+            (c.releve?'<small>'+c.mort+'/'+c.releve+'</small>':'')+'</td>';
+        }).join('')+'</tr>';
+      }).join('')+'</table>'+
+      '<div class="enc att"><b>La zone la plus touchée</b>'+
+      'Lignes '+cr.lignes[cr.pire.a].de+' à '+cr.lignes[cr.pire.a].a+
+      ', arbres '+cr.pire.c.de+' à '+cr.pire.c.a+' : '+
+      vir(cr.pire.c.taux*100,0)+' % de mortalité ('+cr.pire.c.mort+' sur '+
+      cr.pire.c.releve+'), contre '+vir(tm*100,1)+' % sur l’ensemble, soit '+
+      vir(Math.abs(ecartsType(cr.pire.c.mort,cr.pire.c.releve,tm)),1)+
+      ' écarts-types. '+
+      (Math.abs(ecartsType(cr.pire.c.mort,cr.pire.c.releve,tm))>=2
+        ? 'Le hasard d’échantillonnage ne suffit pas à l’expliquer. '
+        : 'Sur si peu d’arbres, le hasard pourrait encore l’expliquer. ')+
+      'C’est ce coin de parcelle qu’il faut aller voir en premier — un '+
+      'profil pris seul, par ligne ou par rang, ne l’aurait pas désigné.</div>';
+  }
+  const b=an.bordure;
+  if(b&&b.releve>=10&&b.coeurReleve>=10){
+    h+='<h3 style="font-size:11pt;margin:16px 0 4px">Le bord contre le cœur</h3>'+
+      tableauTaux([
+        {nom:'En bordure',mort:b.mort,releve:b.releve,taux:b.taux},
+        {nom:'Au cœur',mort:b.coeurMort,releve:b.coeurReleve,taux:b.coeurTaux}
+      ],tm,'Position')+
+      '<span class="rr">'+
+      (b.taux>=b.coeurTaux*1.4
+        ? 'Les bords souffrent nettement plus : cela désigne le gibier, les '+
+          'rongeurs, ou la concurrence d’une haie voisine, plutôt que le sol.'
+        : 'Bords et cœur se ressemblent : ni gibier ni haie ne ressortent, '+
+          'la cause est à chercher dans le sol ou dans les plants.')+
+      '</span>';
+  }
+  const vr=an.voisinageRoche;
+  if(vr&&vr.pres>=8&&vr.loin>=20){
+    h+='<h3 style="font-size:11pt;margin:16px 0 4px">Au contact de la roche</h3>'+
+      tableauTaux([
+        {nom:'Voisin d’un emplacement non plantable',mort:vr.mortPres,
+         releve:vr.pres,taux:vr.tauxPres},
+        {nom:'À l’écart',mort:vr.mortLoin,releve:vr.loin,taux:vr.tauxLoin}
+      ],tm,'Voisinage')+
+      '<span class="rr">'+
+      (vr.signal
+        ? 'On meurt davantage au contact d’un emplacement non plantable : '+
+          'c’est l’épaisseur de terre qui commande, et non une maladie. '+
+          'Un sol mince sur roche assoiffe aussi les arbres qui l’entourent.'
+        : 'Le voisinage de la roche ne ressort pas : la mortalité n’y est pas '+
+          'plus forte qu’ailleurs.')+
+      '</span>';
+  }
+  return h;
 }
 function commentLireLePlan(p){
   /* Les reperes de la grille ne sont pas toujours poses. Sans garde,
@@ -9525,21 +9922,31 @@ function docEtatParcelle(p,rel,surPlace){
   '<\/style></head><body>'+
   enteteDoc(p,'État de la parcelle',
     'Relevé pied à pied du '+fmtDate(new Date(rel.faitLe+'T12:00:00')),an)+
+  /* Une tuile a zero prend la place d'un chiffre utile sans rien
+     dire : on ne montre que ce qui existe. La densite, elle, decide
+     de l'avenir du peuplement — elle vaut mieux qu'une case vide. */
   '<div class="kchiffres">'+
-    '<div class="kc"><b>'+an.vivant+'</b><span>Vivants</span></div>'+
-    '<div class="kc"><b>'+an.deperissant+'</b><span>Dépérissants</span></div>'+
-    '<div class="kc"><b>'+an.mort+'</b><span>Morts sur pied</span></div>'+
-    '<div class="kc"><b>'+an.absent+'</b><span>Vides</span></div>'+
-    '<div class="kc"><b>'+vir(an.tauxManquant*100,1)+' %</b><span>Perte</span></div>'+
+    [['Vivants',an.vivant,true],
+     ['Dépérissants',an.deperissant,an.deperissant>0],
+     ['À recéper',an.recepage,an.recepage>0],
+     ['Morts sur pied',an.mort,true],
+     ['Vides',an.absent,an.absent>0],
+     ['Tiges/ha',an.densiteActuelle,an.densiteActuelle>0],
+     ['Perte',vir(an.tauxManquant*100,1)+' %',true]]
+      .filter(x=>x[2])
+      .map(x=>'<div class="kc"><b>'+x[1]+'</b><span>'+esc(x[0])+'</span></div>')
+      .join('')+
   '</div>'+
   (an.inconnu?'<div class="enc">'+an.inconnu+' emplacement'+(an.inconnu>1?'s n’ont':' n’a')+
     ' pas été relevé'+(an.inconnu>1?'s':'')+'. Les pourcentages portent sur les '+
     an.releves+' emplacements effectivement vus.</div>':'')+
+  blocChiffres(p,an)+
   '<div class="pgr">'+svgParcelle(p,rel.etats,
     {largeur:760,pasMax:16,texte:'#5C6B63',fond:'#FBFAF6'})+'</div>'+
   legendeDoc(rel.etats)+
   commentLireLePlan(p)+
   ouEstLaParcelle(p)+
+  blocConcentration(p,rel,an)+
   verdict+evol+
   (pistes.length
     ? '<h2 style="font-size:13pt;margin:22px 0 10px">Ce que cela peut être</h2>'+
@@ -9578,6 +9985,7 @@ function docEtatParcelle(p,rel,surPlace){
    seule sortie etait de la fermer entierement. Le cadre garde
    l'application vivante dessous et rend le retour evident. */
 let docOuvert=null;        /* {titre, sous, html} */
+let docVenuDe=null;
 function rendreDoc(doc,surPlace){
   if(surPlace){ document.open(); document.write(doc); document.close(); return }
   const t=(String(doc).match(/<title>([^<]*)<\/title>/)||[])[1]||'Document';
@@ -9594,6 +10002,12 @@ function rendreDoc(doc,surPlace){
   /* srcdoc plutot que document.write dans le cadre : le document garde
      ses propres styles et ne peut rien casser dans l'application. */
   c.setAttribute('srcdoc',doc);
+  /* D'ou l'on vient. openSheet ferme les autres feuilles, donc
+     refermer le document ne decouvre rien : « Retour » ramenait a
+     l'accueil Chantier au lieu de la parcelle. On note la feuille
+     ouverte AVANT d'ouvrir le document, et c'est la qu'on revient. */
+  docVenuDe=($$('.sheet.on').map(f=>'#'+f.id)
+    .filter(x=>x!=='#sh-doc'))[0]||null;
   openSheet('#sh-doc');
 }
 /* Imprimer le CADRE, et non l'application qui l'entoure. Sur iPhone,
@@ -9635,7 +10049,16 @@ function imprimerDoc(){
 })();
 
 (function(){
-  const r=$('#doc-retour');   if(r)r.onclick=function(){ closeAll() };
+  /* « Retour » revient d'ou l'on vient — la fiche parcelle, presque
+     toujours. « Fermer », lui, veut dire termine : il ferme tout. */
+  const r=$('#doc-retour');   if(r)r.onclick=function(){
+    closeSheet('#sh-doc');
+    /* On re-rend la parcelle plutot que de la rouvrir telle quelle :
+       un relevé corrigé depuis le document doit s'y voir. */
+    if(docVenuDe==='#sh-parc'&&paId)ouvrirParcelle(paId);
+    else if(docVenuDe)openSheet(docVenuDe);
+    else closeAll();
+  };
   const i=$('#doc-imprimer'); if(i)i.onclick=imprimerDoc;
 })();
 
@@ -10328,6 +10751,25 @@ function renderParcelle(){
       '<button class="mesadd" id="pa-desituer" style="margin-top:9px">'+
       'Retirer les repères</button></div>';
   }
+  /* Le contour reel du terrain. La grille est un rectangle ; la
+     parcelle, presque jamais. Sans ce trace, la carte montre une
+     limite qui n'existe pas, et les emplacements « non plantes » sont
+     le seul indice de la vraie forme. */
+  if(p.contour&&p.contour.length>2){
+    al+='<div class="pdu">Contour relevé : '+p.contour.length+' points, '+
+      vir(areaHa(p.contour),2)+' ha. C’est lui qui est dessiné sur la vue '+
+      'aérienne, à la place du rectangle de la grille.'+
+      '<button class="mesadd" id="pa-contour" style="margin-top:9px">'+
+      'Refaire le contour</button>'+
+      '<button class="mesadd" id="pa-contour-x" style="margin-top:9px">'+
+      'Effacer le contour</button></div>';
+  }else{
+    al+='<div class="pdu">Aucun contour relevé : la carte dessine le rectangle '+
+      'de la grille, qui déborde du terrain. Tracez la vraie forme sur la vue '+
+      'aérienne pour qu’elle s’y superpose.'+
+      '<button class="mesadd" id="pa-contour" style="margin-top:9px">'+
+      'Tracer le contour</button></div>';
+  }
   /* Un releve plus long que sa grille veut dire que la grille a
      retreci sous lui. Aucun caractere n'est perdu, mais ils sont tous
      relus a la mauvaise place : la carte et les comptes sont faux.
@@ -10916,6 +11358,18 @@ brancher('#pa-alerte',function(e){
         paSel=null; renderParcelle(); renderAll();
         toast(f>1?f+' lignes supprimées':'Ligne supprimée');
       });
+    return;
+  }
+  if(e.target.closest('#pa-contour')){
+    if(paId)tracerContourParcelle(paId);
+    return;
+  }
+  if(e.target.closest('#pa-contour-x')){
+    const p=parcelleDe(paId); if(!p)return;
+    askConfirm('Effacer le contour',
+      'La carte reviendra au rectangle de la grille, qui déborde du terrain. '+
+      'Le relevé et la grille ne sont pas touchés.',
+      'Effacer',function(){ effacerContourParcelle(p.id) });
     return;
   }
   if(e.target.closest('#pa-desituer')){
