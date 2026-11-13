@@ -104,6 +104,10 @@ button:active{transform:scale(.965)}
   padding:7px 13px;border-radius:13px;white-space:nowrap;display:none;text-align:center;
   line-height:1.5;font-weight:600;box-shadow:var(--lueur);pointer-events:none}
 #retinfo.on{display:block}
+/* Les arbres tombes hors du contour. En rouge ET en gras : le compte
+   doit sauter aux yeux pendant qu'on fait glisser, c'est lui qu'on
+   cherche a ramener a zero. */
+#retinfo b.hors{color:#8E2A1C}
 
 /* ---------------- bandeaux ---------------- */
 #hint,#alerte,#masque{position:absolute;z-index:602;display:none;border-radius:18px;padding:12px 14px;
@@ -485,6 +489,12 @@ body.attente{opacity:.5}
   border-radius:6px 14px 14px 6px;padding:11px 13px;margin:8px 0;font-size:12.5px;
   line-height:1.5;color:var(--brume)}
 .pdu.urgent{border-left-color:#D4873A}
+/* Un desaccord entre la grille et le contour : il faut qu'il se voie
+   dans la fiche, car c'est lui qui dit que la pose est a reprendre.
+   Le fond ET le gras, pour qu'il reste lisible sans la couleur. */
+.pdu .alerte{background:rgba(180,70,58,.16);border-radius:9px;
+  padding:9px 11px;margin-top:9px;color:#F1C9C1}
+.pdu .accord{margin-top:9px;color:#8FCFA8;font-weight:600}
 
 /* ---------------------------------------------------------------
    Bloc mycologique.
@@ -9057,15 +9067,93 @@ function rayonArbre(z){ return z>=19?6:z>=18?4:3 }
    Les emplacements jamais plantes — bois, haie, roche affleurante —
    en sont absents : ils n'ont aucun arbre a faire coincider avec la
    photo, et les dessiner noierait les autres (229 sur 648 ici). */
-function emplacementsArbres(q,etats){
+/* Un point est-il dans un polygone ? Lancer de rayon : on compte les
+   aretes qu'une demi-droite partant du point traverse. Nombre impair,
+   on est dedans. Sur quelques dizaines de metres, la courbure de la
+   Terre ne change rien — on travaille en latitude/longitude comme sur
+   un plan, et c'est exact a bien mieux que la largeur d'un arbre. */
+function dansPolygone(pt,poly){
+  if(!pt||!poly||poly.length<3)return false;
+  const y=Number(pt[0]), x=Number(pt[1]);
+  if(!isFinite(y)||!isFinite(x))return false;
+  let dedans=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const yi=Number(poly[i][0]), xi=Number(poly[i][1]);
+    const yj=Number(poly[j][0]), xj=Number(poly[j][1]);
+    if((yi>y)!==(yj>y) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) dedans=!dedans;
+  }
+  return dedans;
+}
+/* Distance d'un point a la limite d'un polygone, en metres.
+   Un trace fait au doigt sur une photo aerienne ne passe pas au
+   centimetre, et les coins d'une grille sont les CENTRES des arbres
+   de bordure : un contour qui epouse exactement ces arbres les met
+   mathematiquement sur la limite, donc « dehors » une fois sur deux.
+   Sans tolerance, un contour parfait denoncait vingt-quatre arbres. */
+function distanceAuBord(pt,poly){
+  if(!pt||!poly||poly.length<2)return Infinity;
+  const k=metrique(Number(pt[0]));
+  const X=t=>Number(t[1])*k.p, Y=t=>Number(t[0])*k.m;
+  const x=X(pt), y=Y(pt);
+  let mini=Infinity;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const x1=X(poly[j]), y1=Y(poly[j]), x2=X(poly[i]), y2=Y(poly[i]);
+    const dx=x2-x1, dy=y2-y1, L2=dx*dx+dy*dy;
+    /* Projection du point sur le segment, bornee a ses extremites :
+       au-dela, c'est le sommet le plus proche qui compte. */
+    let t=L2?((x-x1)*dx+(y-y1)*dy)/L2:0;
+    t=Math.max(0,Math.min(1,t));
+    const ex=x1+t*dx-x, ey=y1+t*dy-y;
+    const d=Math.sqrt(ex*ex+ey*ey);
+    if(d<mini)mini=d;
+  }
+  return mini;
+}
+/* Un emplacement compte comme dans le terrain s'il est dans le
+   polygone, ou dehors de moins d'une demi-maille. Une demi-maille,
+   parce qu'au-dela l'arbre serait plus pres de la rangee voisine que
+   de la limite : ce n'est plus de l'imprecision de trace. */
+function dansTerrain(pt,poly,tolerance){
+  if(dansPolygone(pt,poly))return true;
+  if(!(tolerance>0))return false;
+  return distanceAuBord(pt,poly)<=tolerance;
+}
+function toleranceContour(q){
+  const a=Math.abs(q&&q.ecartArbre||0), l=Math.abs(q&&q.ecartLigne||0);
+  const m=Math.min(a||l, l||a);
+  return m>0?m/2:0;
+}
+/* Les emplacements d'une grille. Avec un contour, chacun sait s'il
+   tombe dans le terrain ou hors de lui : c'est ce qui rend le trace
+   utile au lieu de decoratif. */
+function emplacementsArbres(q,etats,contour){
   const nl=Math.max(1,q.nbLignes||1), nr=Math.max(1,q.nbArbres||1);
   const ch=String(etats||''), out=[];
+  const ct=(contour&&contour.length>2)?contour:null;
   for(let i=0;i<nl;i++)for(let j=0;j<nr;j++){
     const e=ch[i*nr+j]||'?';
     if(e==='h'||e==='r')continue;
-    out.push({p:posArbre(q,i,j), c:(ETAT_PLACE[e]||ETAT_PLACE['?']).c});
+    const pos=posArbre(q,i,j);
+    out.push({p:pos, c:(ETAT_PLACE[e]||ETAT_PLACE['?']).c, e:e, i:i, j:j,
+              dedans:ct?dansTerrain(pos,ct,toleranceContour(q)):true});
   }
   return out;
+}
+/* Ce que le contour dit de la grille telle qu'elle est posee. C'est la
+   mesure qui sert a poser : on fait glisser jusqu'a ce que « dehors »
+   tombe a zero. */
+function accordContour(p,etats,contour,q){
+  const ct=(contour&&contour.length>2)?contour:null;
+  if(!ct)return null;
+  const emp=emplacementsArbres(q||p,etats,ct);
+  let dedans=0, dehors=0, vivantsDehors=0;
+  emp.forEach(function(x){
+    if(x.dedans){dedans++;return}
+    dehors++;
+    if(x.e==='v'||x.e==='d'||x.e==='c')vivantsDehors++;
+  });
+  return {total:emp.length, dedans:dedans, dehors:dehors,
+          vivantsDehors:vivantsDehors};
 }
 function dessinerCalque(refaireLesPoignees){
   if(!SIT)return;
@@ -9078,11 +9166,19 @@ function dessinerCalque(refaireLesPoignees){
         C=posArbre(q,L1-1,0), D=posArbre(q,L1-1,R1-1);
   /* Le cadre de la grille. Une fois les arbres visibles, il ne porte
      plus de remplissage : un aplat sur la photo aerienne masque
-     justement les arbres qu'on vise. */
+     justement les arbres qu'on vise.
+     Et quand le vrai contour est connu, c'est LUI la limite du
+     terrain : le rectangle n'est plus qu'un reperage pale, sinon on
+     pose la grille sur une forme qui n'existe pas. */
   let zc=ZOOM_ARBRES; try{ zc=map.getZoom() }catch(e){}
-  L.polygon([A,B,D,C],{color:'#7FB8D6',weight:zc>=ZOOM_ARBRES?1.5:2,
-    fillColor:'#7FB8D6',fillOpacity:zc>=ZOOM_ARBRES?0:.10,
+  const ctr=(p.contour&&p.contour.length>2)?p.contour:null;
+  L.polygon([A,B,D,C],{color:'#7FB8D6',
+    weight:ctr?1:(zc>=ZOOM_ARBRES?1.5:2),
+    opacity:ctr?.45:1,dashArray:ctr?'4,5':null,
+    fillColor:'#7FB8D6',fillOpacity:(ctr||zc>=ZOOM_ARBRES)?0:.10,
     interactive:false}).addTo(SIT.cal);
+  if(ctr)L.polygon(ctr,{color:'#F0C040',weight:2.5,fillColor:'#F0C040',
+    fillOpacity:zc>=ZOOM_ARBRES?0:.10,interactive:false}).addTo(SIT.cal);
   /* Les arbres eux-memes, des qu'on est assez pres pour les
      distinguer : c'est en les faisant tomber sur les arbres de la
      photo aerienne qu'on pose la grille juste. On les REPLACE au lieu
@@ -9098,24 +9194,38 @@ function dessinerCalque(refaireLesPoignees){
       {color:'#CFE6F3',weight:1.2,opacity:.85,interactive:false}).addTo(SIT.cal);
   }
   const rel=dernierReleve(SIT.id);
-  const emp=(z>=ZOOM_ARBRES)?emplacementsArbres(q,rel?rel.etats:''):[];
+  const emp=(z>=ZOOM_ARBRES)?emplacementsArbres(q,rel?rel.etats:'',ctr):[];
   if(!SIT.arb)SIT.arb=L.layerGroup().addTo(map);
-  if(SIT.pts&&SIT.pts.length===emp.length&&SIT.rayon===rayonArbre(z)){
+  /* Un arbre tombe hors du contour : on le montre creux et pale, sans
+     l'effacer. L'effacer cacherait justement ce qu'il faut corriger —
+     soit la grille est mal posee, soit le contour est faux. */
+  const style=x=>({radius:SIT.rayon,weight:x.dedans?1:1.5,
+    color:x.dedans?'#0B1410':'#B4463A',
+    fillColor:x.c,fillOpacity:x.dedans?.95:.15,interactive:false});
+  const memes=SIT.pts&&SIT.pts.length===emp.length&&
+    SIT.rayon===rayonArbre(z)&&
+    SIT.dehors===emp.filter(x=>!x.dedans).length;
+  if(memes){
     for(let k=0;k<emp.length;k++)SIT.pts[k].setLatLng(emp[k].p);
   }else{
     SIT.arb.clearLayers(); SIT.pts=[]; SIT.rayon=rayonArbre(z);
     for(let k=0;k<emp.length;k++){
-      SIT.pts.push(L.circleMarker(emp[k].p,{radius:SIT.rayon,weight:1,
-        color:'#0B1410',fillColor:emp[k].c,fillOpacity:.95,
-        interactive:false}).addTo(SIT.arb));
+      SIT.pts.push(L.circleMarker(emp[k].p,style(emp[k])).addTo(SIT.arb));
     }
   }
+  SIT.dehors=emp.filter(x=>!x.dedans).length;
   const d=distanceLocale(A[0],A[1],B[0],B[1]);
   /* Si les arbres ne sont pas dessines, on le dit : sans cela, une
      grille vide se lit comme une panne et non comme un zoom trop
      large. */
+  /* Le compte en direct : c'est LA mesure qui sert a poser. On fait
+     glisser jusqu'a ce que « dehors » tombe a zero, au lieu de juger
+     a l'oeil si la grille est bien dans le terrain. */
+  const acc=ctr?accordContour(p,rel?rel.etats:'',ctr,q):null;
   $('#retinfo').innerHTML=L1+' lignes × '+R1+' arbres · ligne de '+Math.round(d)+' m'+
     '<br>cap '+Math.round(SIT.cap)+'° · '+dms(SIT.lat,'N','S')+' '+dms(SIT.lng,'E','O')+
+    (acc?'<br><b>'+acc.dedans+'</b> arbres dans le contour'+
+      (acc.dehors?', <b class="hors">'+acc.dehors+' dehors</b>':' — aucun dehors'):'')+
     (emp.length?'':'<br>Zoomez pour voir les arbres un par un');
   if(refaireLesPoignees){
     if(SIT.hA){try{SIT.hA.remove()}catch(e){}}
@@ -9232,9 +9342,14 @@ function renderParcs(){
       try{ if(vue&&vue.intersects)dedans=vue.intersects(bb) }catch(e){}
       if(!dedans)return;
       const rel=dernierReleve(p.id), r=rayonArbre(z);
-      emplacementsArbres(p,rel?rel.etats:'').forEach(function(e){
-        L.circleMarker(e.p,{radius:r,weight:1,color:'#0B1410',
-          fillColor:e.c,fillOpacity:.95,interactive:false}).addTo(layParcs);
+      /* Un arbre hors du contour se montre creux : il signale que la
+         grille ou le contour est a reprendre. L'effacer masquerait
+         l'erreur au lieu de la montrer. */
+      emplacementsArbres(p,rel?rel.etats:'',ct).forEach(function(e){
+        L.circleMarker(e.p,{radius:r,weight:e.dedans?1:1.5,
+          color:e.dedans?'#0B1410':'#B4463A',
+          fillColor:e.c,fillOpacity:e.dedans?.95:.15,
+          interactive:false}).addTo(layParcs);
       });
     });
   }catch(e){}
@@ -9263,6 +9378,31 @@ function finirContourParcelle(pts){
   marquerParc(p); save(); renderAll();
   toast('Contour enregistré · '+vir(areaHa(p.contour),2)+' ha');
   setTimeout(function(){ouvrirParcelle(p.id)},200);
+}
+/* Tirer la consequence du contour sur le releve : ce qui tombe hors
+   du terrain n'y a jamais ete plante. C'est ce qui rend la parcelle
+   NON rectangulaire — la grille reste un rectangle, mais les
+   emplacements hors contour cessent de compter.
+   Deux garde-fous. On ne touche jamais a un emplacement ou un arbre a
+   ete releve vivant, deperissant ou a receper : ce serait effacer une
+   observation de terrain au profit d'un trace fait au doigt. Et on
+   n'agit que sur demande explicite, jamais en arriere-plan. */
+function appliquerContourAuReleve(id){
+  const p=parcelleDe(id); if(!p||!parcelleSituee(p))return 0;
+  if(!p.contour||p.contour.length<3)return 0;
+  const rel=dernierReleve(id); if(!rel)return 0;
+  const nr=Math.max(1,p.nbArbres||1);
+  const ch=rel.etats.split('');
+  let n=0;
+  emplacementsArbres(p,rel.etats,p.contour).forEach(function(x){
+    if(x.dedans)return;
+    if(x.e==='v'||x.e==='d'||x.e==='c')return;   /* observation gardee */
+    ch[x.i*nr+x.j]='h'; n++;
+  });
+  if(!n)return 0;
+  rel.etats=ch.join('');
+  marquerRel(rel); save(); renderParcelle(); renderAll();
+  return n;
 }
 function effacerContourParcelle(id){
   const p=parcelleDe(id); if(!p||!p.contour||!p.contour.length)return;
@@ -10756,10 +10896,35 @@ function renderParcelle(){
      limite qui n'existe pas, et les emplacements « non plantes » sont
      le seul indice de la vraie forme. */
   if(p.contour&&p.contour.length>2){
+    /* Un contour qui ne fait que se dessiner a cote de la grille ne
+       sert a rien. Ce qu'il apporte, c'est de dire combien
+       d'emplacements tombent hors du terrain : c'est la mesure qui
+       dit si la grille est bien posee, et de quoi rendre la parcelle
+       non rectangulaire. */
+    const rl=dernierReleve(p.id);
+    const acc=parcelleSituee(p)
+      ? accordContour(p,rl?rl.etats:'',p.contour) : null;
     al+='<div class="pdu">Contour relevé : '+p.contour.length+' points, '+
       vir(areaHa(p.contour),2)+' ha. C’est lui qui est dessiné sur la vue '+
-      'aérienne, à la place du rectangle de la grille.'+
-      '<button class="mesadd" id="pa-contour" style="margin-top:9px">'+
+      'aérienne, à la place du rectangle de la grille.';
+    if(acc&&acc.dehors){
+      al+='<div class="alerte" style="margin-top:9px"><b>'+acc.dehors+
+        ' emplacement'+(acc.dehors>1?'s tombent':' tombe')+' hors du contour</b>'+
+        (acc.vivantsDehors?' — dont '+acc.vivantsDehors+' arbre'+
+          (acc.vivantsDehors>1?'s relevés vivants':' relevé vivant')+'.':'.')+
+        ' Sur la carte ils sont dessinés creux. Soit la grille est décalée '+
+        '— reprenez « Situer » et faites tomber le compte à zéro —, soit '+
+        'le contour est à refaire.'+
+        (acc.vivantsDehors?'':'<br>Aucun arbre vivant n’est concerné : vous '+
+          'pouvez marquer ces emplacements comme jamais plantés.'+
+          '<button class="mesadd" id="pa-contour-app" style="margin-top:9px">'+
+          'Marquer les '+acc.dehors+' comme non plantés</button>')+
+        '</div>';
+    }else if(acc){
+      al+='<div class="accord"><b>'+acc.dedans+
+        ' emplacements</b>, tous dans le contour. La grille est bien posée.</div>';
+    }
+    al+='<button class="mesadd" id="pa-contour" style="margin-top:9px">'+
       'Refaire le contour</button>'+
       '<button class="mesadd" id="pa-contour-x" style="margin-top:9px">'+
       'Effacer le contour</button></div>';
@@ -11362,6 +11527,22 @@ brancher('#pa-alerte',function(e){
   }
   if(e.target.closest('#pa-contour')){
     if(paId)tracerContourParcelle(paId);
+    return;
+  }
+  if(e.target.closest('#pa-contour-app')){
+    const p=parcelleDe(paId); if(!p)return;
+    const rl=dernierReleve(p.id);
+    const acc=accordContour(p,rl?rl.etats:'',p.contour);
+    if(!acc||!acc.dehors)return;
+    askConfirm('Marquer '+acc.dehors+' emplacements comme non plant\u00e9s',
+      'Ils tombent hors du contour que vous avez trac\u00e9. Aucun arbre relev\u00e9 '+
+      'vivant ne sera touch\u00e9. Les pourcentages et la densit\u00e9 seront '+
+      'recalcul\u00e9s sur les emplacements restants.',
+      'Marquer',function(){
+        const n=appliquerContourAuReleve(p.id);
+        toast(n+' emplacement'+(n>1?'s marqu\u00e9s':' marqu\u00e9')+' non plant\u00e9'+
+          (n>1?'s':''));
+      });
     return;
   }
   if(e.target.closest('#pa-contour-x')){
