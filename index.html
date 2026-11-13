@@ -9379,6 +9379,80 @@ function finirContourParcelle(pts){
   toast('Contour enregistré · '+vir(areaHa(p.contour),2)+' ha');
   setTimeout(function(){ouvrirParcelle(p.id)},200);
 }
+/* Chercher la pose qui loge le plus d'arbres dans le contour.
+
+   On ne DEFORME jamais la grille : l'ecartement est une donnee du
+   terrain, pas un reglage. Sept metres sont sept metres, et etirer la
+   grille reviendrait a pretendre le contraire. Ce qui donne sa forme
+   a la plantation, ce sont les emplacements jamais plantes.
+   Il ne reste donc que trois inconnues : deux translations et une
+   rotation.
+
+   Recherche en deux passes, large et grossiere puis fine autour du
+   meilleur. Une seule passe fine couterait des dizaines de millions
+   d'essais ; deux passes en coutent deux millions, et un telephone
+   les avale. Et l'on recalcule les sinus UNE fois par essai, pas une
+   fois par arbre : c'est ce qui fait la difference entre une seconde
+   et une minute. */
+function ajusterSurContour(p){
+  const ct=(p&&p.contour&&p.contour.length>2)?p.contour:null;
+  if(!ct||!parcelleSituee(p))return null;
+  const nl=p.nbLignes||1, nr=p.nbArbres||1;
+  const rel=dernierReleve(p.id), ch=String(rel?rel.etats:'');
+  const tol=toleranceContour(p);
+  const ea=p.ecartArbre||0, el=p.ecartLigne||0;
+  /* Seuls les emplacements plantes comptent : les autres n'ont aucun
+     arbre a loger, et les compter fausserait la mesure. */
+  const base=[];
+  for(let i=0;i<nl;i++)for(let j=0;j<nr;j++){
+    const e=ch[i*nr+j]||'?';
+    if(e==='h'||e==='r')continue;
+    base.push([j*ea, i*el]);
+  }
+  if(!base.length)return null;
+  const k=metrique(p.oriLat);
+  function dedansCombien(dn,de,dcap){
+    const r=(p.cap+dcap)*Math.PI/180, co=Math.cos(r), si=Math.sin(r);
+    const lat0=p.oriLat+dn/k.m, lng0=p.oriLng+(k.p?de/k.p:0);
+    let n=0;
+    for(let t=0;t<base.length;t++){
+      const dr=base[t][0], dl=base[t][1];
+      const lat=lat0+(dr*co-dl*si)/k.m;
+      const lng=lng0+(k.p?(dr*si+dl*co)/k.p:0);
+      if(dansTerrain([lat,lng],ct,tol))n++;
+    }
+    return n;
+  }
+  function passe(n0,e0,c0,portee,pas,arc,pasArc){
+    let m={n:-1,dn:n0,de:e0,dc:c0};
+    for(let dc=-arc;dc<=arc+1e-9;dc+=pasArc)
+      for(let dn=-portee;dn<=portee+1e-9;dn+=pas)
+        for(let de=-portee;de<=portee+1e-9;de+=pas){
+          const n=dedansCombien(n0+dn,e0+de,c0+dc);
+          if(n>m.n)m={n:n,dn:n0+dn,de:e0+de,dc:c0+dc};
+        }
+    return m;
+  }
+  const avant=dedansCombien(0,0,0);
+  let b=passe(0,0,0, 15,3, 6,1);
+  b=passe(b.dn,b.de,b.dc, 3,0.5, 1,0.1);
+  /* On ne propose rien si l'on ne fait pas mieux : deplacer une
+     grille pour un resultat identique n'est pas une amelioration,
+     c'est du bruit. */
+  if(b.n<=avant)return {avant:avant,apres:avant,total:base.length,gain:0};
+  const o=decaler(p.oriLat,p.oriLng,b.dn,b.de);
+  return {avant:avant, apres:b.n, total:base.length, gain:b.n-avant,
+          oriLat:o[0], oriLng:o[1], cap:p.cap+b.dc,
+          deplacement:Math.sqrt(b.dn*b.dn+b.de*b.de), rotation:b.dc};
+}
+function appliquerAjustement(id,a){
+  const p=parcelleDe(id);
+  if(!p||!a||!a.gain||a.oriLat==null)return false;
+  p.oriLat=a.oriLat; p.oriLng=a.oriLng; p.cap=a.cap;
+  marquerParc(p); save(); renderParcelle(); renderAll();
+  return true;
+}
+
 /* Tirer la consequence du contour sur le releve : ce qui tombe hors
    du terrain n'y a jamais ete plante. C'est ce qui rend la parcelle
    NON rectangulaire — la grille reste un rectangle, mais les
@@ -10912,9 +10986,11 @@ function renderParcelle(){
         ' emplacement'+(acc.dehors>1?'s tombent':' tombe')+' hors du contour</b>'+
         (acc.vivantsDehors?' — dont '+acc.vivantsDehors+' arbre'+
           (acc.vivantsDehors>1?'s relevés vivants':' relevé vivant')+'.':'.')+
-        ' Sur la carte ils sont dessinés creux. Soit la grille est décalée '+
-        '— reprenez « Situer » et faites tomber le compte à zéro —, soit '+
-        'le contour est à refaire.'+
+        ' Sur la carte ils sont dessinés creux. La grille ne se déforme '+
+        'pas — vos arbres sont à '+vir(Math.abs(p.ecartArbre),1)+' m — mais '+
+        'elle se déplace et pivote.'+
+        '<button class="mesadd" id="pa-contour-fit" style="margin-top:9px">'+
+        'Ajuster automatiquement</button>'+
         (acc.vivantsDehors?'':'<br>Aucun arbre vivant n’est concerné : vous '+
           'pouvez marquer ces emplacements comme jamais plantés.'+
           '<button class="mesadd" id="pa-contour-app" style="margin-top:9px">'+
@@ -11527,6 +11603,32 @@ brancher('#pa-alerte',function(e){
   }
   if(e.target.closest('#pa-contour')){
     if(paId)tracerContourParcelle(paId);
+    return;
+  }
+  if(e.target.closest('#pa-contour-fit')){
+    const p=parcelleDe(paId); if(!p)return;
+    toast('Recherche de la meilleure pose\u2026');
+    /* On rend la main a l'ecran avant de calculer : sans cela le
+       message n'apparait qu'une fois le calcul fini, c'est-a-dire
+       jamais au bon moment. */
+    setTimeout(function(){
+      const a=ajusterSurContour(p);
+      if(!a){ toast('Tracez le contour et situez la parcelle d\u2019abord'); return }
+      if(!a.gain){
+        toast('D\u00e9j\u00e0 au mieux : '+a.avant+' sur '+a.total+' dans le contour');
+        return;
+      }
+      askConfirm('Ajuster la pose',
+        'La grille gagne '+a.gain+' arbre'+(a.gain>1?'s':'')+' dans le contour : '+
+        a.avant+' \u2192 '+a.apres+' sur '+a.total+'. '+
+        'Elle se d\u00e9place de '+vir(a.deplacement,1)+'\u00a0m et pivote de '+
+        vir(Math.abs(a.rotation),1)+'\u00b0. '+
+        'L\u2019\u00e9cartement ne change pas, et le relev\u00e9 non plus.',
+        'Ajuster',function(){
+          appliquerAjustement(p.id,a);
+          toast(a.apres+' sur '+a.total+' dans le contour');
+        });
+    },60);
     return;
   }
   if(e.target.closest('#pa-contour-app')){
